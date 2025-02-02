@@ -1,12 +1,109 @@
 <!DOCTYPE html>
+<!--
+  Copyright (C) 2025 Russell Li (xiaoxinmm)
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program. If not, see <https://www.gnu.org/licenses/>.
+-->
+
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>sysmon</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230d1117'/><text x='50' y='38' font-family='monospace' font-size='24' fill='%2300ff41' text-anchor='middle'>SYS</text><text x='50' y='62' font-family='monospace' font-size='18' fill='%2358a6ff' text-anchor='middle'>MON</text><rect x='15' y='72' width='70' height='4' rx='2' fill='%2300ff41' opacity='0.6'/><rect x='15' y='80' width='45' height='4' rx='2' fill='%2358a6ff' opacity='0.6'/></svg>">
+<link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-<h1>sysmon</h1>
-<p>system monitor - work in progress</p>
+<header id="header">
+  <div class="header-left">
+    <span class="logo">sysmon</span>
+    <span id="hostname" class="header-info"></span>
+  </div>
+  <div class="header-right">
+    <span id="conn-status" class="status-dot disconnected" title="disconnected"></span>
+    <span id="platform-info" class="header-info"></span>
+    <span id="uptime" class="header-info"></span>
+  </div>
+</header>
+
+<main>
+  <section class="grid-row">
+    <div class="card">
+      <h2>CPU</h2>
+      <div class="card-subtitle">
+        <span id="cpu-model"></span>
+        <span id="cpu-cores"></span>
+      </div>
+      <div class="metric-big">
+        <span id="cpu-avg">0</span><span class="metric-unit">%</span>
+      </div>
+      <div id="cpu-bars" class="bar-group"></div>
+    </div>
+    <div class="card">
+      <h2>Memory</h2>
+      <div class="card-subtitle">
+        <span id="mem-subtitle"></span>
+      </div>
+      <div class="metric-big">
+        <span id="mem-pct">0</span><span class="metric-unit">%</span>
+      </div>
+      <div class="bar-single">
+        <div id="mem-bar" class="bar-fill" style="width:0%"></div>
+      </div>
+      <div class="mem-details">
+        <span>Used: <b id="mem-used">-</b></span>
+        <span>Free: <b id="mem-free">-</b></span>
+        <span>Total: <b id="mem-total">-</b></span>
+      </div>
+      <div id="swap-section" class="swap-section" style="display:none">
+        <div class="swap-label">Swap</div>
+        <div class="bar-single bar-swap">
+          <div id="swap-bar" class="bar-fill" style="width:0%"></div>
+        </div>
+        <div class="mem-details">
+          <span>Used: <b id="swap-used">-</b></span>
+          <span>Total: <b id="swap-total">-</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Load Average</h2>
+      <div class="load-values">
+        <div class="load-item">
+          <div class="load-label">1 min</div>
+          <div class="load-val" id="load1">-</div>
+        </div>
+        <div class="load-item">
+          <div class="load-label">5 min</div>
+          <div class="load-val" id="load5">-</div>
+        </div>
+        <div class="load-item">
+          <div class="load-label">15 min</div>
+          <div class="load-val" id="load15">-</div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span id="go-ver"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>sysmon &mdash; built with Go + gopsutil</span>
+</footer>
+
+<script src="/js/app.js"></script>
 </body>
 </html>
