@@ -6,7 +6,13 @@
 
 ## 截图
 
-（待补充）
+### 手机端（横向）
+
+![Mobile Landscape](docs/mobile-1.jpg)
+
+### 手机端（纵向）
+
+![Mobile Portrait](docs/mobile-2.jpg)
 
 ## 功能
 
