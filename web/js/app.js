@@ -1,0 +1,466 @@
+(function() {
+  'use strict';
+
+  var sortField = 'cpu';
+  var lastData = null;
+  var ws = null;
+  var reconnectDelay = 1000;
+  var historyData = []; // {t, c, m} arrays
+
+  function $(sel) { return document.querySelector(sel); }
+
+  function fmtBytes(b) {
+    if (b === 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(b) / Math.log(1024));
+    if (i >= units.length) i = units.length - 1;
+    return (b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+  }
+
+  function fmtRate(bytesPerSec) {
+    if (bytesPerSec <= 0) return '0 B/s';
+    if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+    if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+    return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+  }
+
+  function fmtUptime(sec) {
+    var d = Math.floor(sec / 86400);
+    var h = Math.floor((sec % 86400) / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var parts = [];
+    if (d > 0) parts.push(d + 'd');
+    if (h > 0) parts.push(h + 'h');
+    parts.push(m + 'm');
+    return parts.join(' ');
+  }
+
+  function fmtTime(unixSec) {
+    var d = new Date(unixSec * 1000);
+    var hh = ('0' + d.getHours()).slice(-2);
+    var mm = ('0' + d.getMinutes()).slice(-2);
+    return hh + ':' + mm;
+  }
+
+  function fmtDateTime(unixSec) {
+    var d = new Date(unixSec * 1000);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  }
+
+  function pctBarClass(pct) {
+    if (pct >= 90) return ' crit';
+    if (pct >= 70) return ' warn';
+    return '';
+  }
+
+  function pctColorClass(pct) {
+    if (pct >= 90) return 'c-red';
+    if (pct >= 70) return 'c-yellow';
+    return 'c-green';
+  }
+
+  function statusLabel(s) {
+    var map = { R: 'RUN', S: 'SLP', D: 'DSK', Z: 'ZMB', T: 'STP', I: 'IDL', sleep: 'SLP', running: 'RUN', idle: 'IDL', stop: 'STP', zombie: 'ZMB' };
+    return map[s] || s || '-';
+  }
+
+  // -- render functions --
+
+  function renderSystem(sys) {
+    $('#hostname').textContent = sys.hostname;
+    document.title = 'sysmon - ' + sys.hostname;
+    $('#platform-info').textContent = sys.platform + ' / ' + sys.kernel + ' / ' + sys.arch;
+    $('#uptime').textContent = 'up ' + fmtUptime(sys.uptime);
+  }
+
+  function renderCPU(cpu) {
+    $('#cpu-model').textContent = cpu.model || '-';
+    $('#cpu-cores').textContent = cpu.cores + 'C/' + cpu.threads + 'T';
+    var avg = cpu.avgUsage.toFixed(1);
+    $('#cpu-avg').textContent = avg;
+    $('#cpu-avg').className = pctColorClass(cpu.avgUsage);
+
+    var container = $('#cpu-bars');
+    var usage = cpu.usage || [];
+
+    if (container.children.length !== usage.length) {
+      var html = '';
+      for (var i = 0; i < usage.length; i++) {
+        html += '<div class="bar-row"><span class="bar-label">' + i + '</span><div class="bar-track"><div class="bar-fill" id="cpu-bar-' + i + '"></div></div><span class="bar-pct" id="cpu-pct-' + i + '"></span></div>';
+      }
+      container.innerHTML = html;
+    }
+    for (var j = 0; j < usage.length; j++) {
+      var pct = usage[j];
+      var bar = $('#cpu-bar-' + j);
+      var lbl = $('#cpu-pct-' + j);
+      if (bar) {
+        bar.style.width = pct.toFixed(0) + '%';
+        bar.className = 'bar-fill' + pctBarClass(pct);
+      }
+      if (lbl) lbl.textContent = pct.toFixed(0) + '%';
+    }
+  }
+
+  function renderMemory(mem) {
+    var pct = mem.usedPercent.toFixed(1);
+    $('#mem-pct').textContent = pct;
+    $('#mem-pct').className = pctColorClass(mem.usedPercent);
+    $('#mem-bar').style.width = pct + '%';
+    $('#mem-bar').className = 'bar-fill' + pctBarClass(mem.usedPercent);
+    $('#mem-used').textContent = fmtBytes(mem.used);
+    $('#mem-free').textContent = fmtBytes(mem.available);
+    $('#mem-total').textContent = fmtBytes(mem.total);
+    $('#mem-subtitle').textContent = fmtBytes(mem.used) + ' / ' + fmtBytes(mem.total);
+
+    if (mem.swapTotal > 0) {
+      $('#swap-section').style.display = '';
+      $('#swap-bar').style.width = mem.swapPercent.toFixed(0) + '%';
+      $('#swap-bar').className = 'bar-fill' + pctBarClass(mem.swapPercent);
+      $('#swap-used').textContent = fmtBytes(mem.swapUsed);
+      $('#swap-total').textContent = fmtBytes(mem.swapTotal);
+    } else {
+      $('#swap-section').style.display = 'none';
+    }
+  }
+
+  function renderLoad(ld, cpuInfo, goVer) {
+    var cores = cpuInfo.threads || 1;
+    function colorLoad(v) {
+      var ratio = v / cores;
+      if (ratio >= 1.0) return 'c-red';
+      if (ratio >= 0.7) return 'c-yellow';
+      return 'c-green';
+    }
+    $('#load1').textContent = ld.load1.toFixed(2);
+    $('#load1').className = 'load-val ' + colorLoad(ld.load1);
+    $('#load5').textContent = ld.load5.toFixed(2);
+    $('#load5').className = 'load-val ' + colorLoad(ld.load5);
+    $('#load15').textContent = ld.load15.toFixed(2);
+    $('#load15').className = 'load-val ' + colorLoad(ld.load15);
+    $('#go-ver').textContent = goVer;
+  }
+
+  function renderDisks(disks) {
+    var tbody = $('#disk-table').querySelector('tbody');
+    var html = '';
+    for (var i = 0; i < disks.length; i++) {
+      var d = disks[i];
+      var cls = pctBarClass(d.usedPercent);
+      html += '<tr>' +
+        '<td>' + esc(d.mountpoint) + '</td>' +
+        '<td>' + esc(d.device) + '</td>' +
+        '<td>' + esc(d.fstype) + '</td>' +
+        '<td>' + fmtBytes(d.total) + '</td>' +
+        '<td>' + fmtBytes(d.used) + '</td>' +
+        '<td>' + fmtBytes(d.free) + '</td>' +
+        '<td class="' + pctColorClass(d.usedPercent) + '">' + d.usedPercent.toFixed(1) + '%</td>' +
+        '<td><div class="mini-bar"><div class="bar-fill' + cls + '" style="width:' + d.usedPercent.toFixed(0) + '%"></div></div></td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function renderNetwork(nets) {
+    var tbody = $('#net-table').querySelector('tbody');
+    var html = '';
+    for (var i = 0; i < nets.length; i++) {
+      var n = nets[i];
+      html += '<tr>' +
+        '<td>' + esc(n.name) + '</td>' +
+        '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc(n.addrs || '-') + '</td>' +
+        '<td>' + fmtBytes(n.bytesSent) + '</td>' +
+        '<td>' + fmtBytes(n.bytesRecv) + '</td>' +
+        '<td>' + fmtRate(n.sendRate) + '</td>' +
+        '<td>' + fmtRate(n.recvRate) + '</td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function renderDocker(containers) {
+    if (!containers || containers.length === 0) {
+      $('#docker-card').style.display = 'none';
+      return;
+    }
+    $('#docker-card').style.display = '';
+    var running = containers.filter(function(c) { return c.state === 'running'; }).length;
+    $('#docker-count').textContent = '(' + running + '/' + containers.length + ')';
+
+    var tbody = $('#docker-table').querySelector('tbody');
+    var html = '';
+    for (var i = 0; i < containers.length; i++) {
+      var c = containers[i];
+      var stateClass = 'state-' + c.state;
+      html += '<tr>' +
+        '<td>' + esc(c.name) + '</td>' +
+        '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc(c.image) + '</td>' +
+        '<td><span class="state-badge ' + stateClass + '">' + esc(c.state) + '</span></td>' +
+        '<td>' + esc(c.status) + '</td>' +
+        '<td class="col-num">' + (c.state === 'running' ? c.cpuPct.toFixed(1) + '%' : '-') + '</td>' +
+        '<td class="col-num">' + (c.memUsage > 0 ? fmtBytes(c.memUsage) : '-') + '</td>' +
+        '<td>' + fmtDateTime(c.created) + '</td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function renderProcesses(procs) {
+    var sorted = procs.slice();
+    if (sortField === 'cpu') sorted.sort(function(a, b) { return b.cpu - a.cpu; });
+    else if (sortField === 'mem') sorted.sort(function(a, b) { return b.mem - a.mem; });
+    else if (sortField === 'pid') sorted.sort(function(a, b) { return a.pid - b.pid; });
+
+    $('#proc-count').textContent = '(' + sorted.length + ')';
+
+    var tbody = $('#proc-table').querySelector('tbody');
+    var html = '';
+    for (var i = 0; i < sorted.length; i++) {
+      var p = sorted[i];
+      html += '<tr>' +
+        '<td class="col-pid">' + p.pid + '</td>' +
+        '<td>' + esc(p.name) + '</td>' +
+        '<td class="col-num ' + (p.cpu > 50 ? 'c-red' : p.cpu > 20 ? 'c-yellow' : '') + '">' + p.cpu.toFixed(1) + '</td>' +
+        '<td class="col-num ' + (p.mem > 50 ? 'c-red' : p.mem > 20 ? 'c-yellow' : '') + '">' + p.mem.toFixed(1) + '</td>' +
+        '<td class="col-status">' + statusLabel(p.status) + '</td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function esc(s) {
+    var d = document.createElement('span');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ---- History Chart (Canvas) ----
+
+  var chartCanvas = null;
+  var chartCtx = null;
+  var chartAnimFrame = null;
+
+  function initChart() {
+    chartCanvas = document.getElementById('history-chart');
+    if (!chartCanvas) return;
+    chartCtx = chartCanvas.getContext('2d');
+    resizeChart();
+    window.addEventListener('resize', resizeChart);
+  }
+
+  function resizeChart() {
+    if (!chartCanvas) return;
+    var container = chartCanvas.parentElement;
+    var dpr = window.devicePixelRatio || 1;
+    var w = container.clientWidth;
+    var h = container.clientHeight;
+    chartCanvas.width = w * dpr;
+    chartCanvas.height = h * dpr;
+    chartCanvas.style.width = w + 'px';
+    chartCanvas.style.height = h + 'px';
+    chartCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawChart();
+  }
+
+  function drawChart() {
+    if (!chartCtx || !chartCanvas) return;
+    var container = chartCanvas.parentElement;
+    var w = container.clientWidth;
+    var h = container.clientHeight;
+
+    var ctx = chartCtx;
+    ctx.clearRect(0, 0, w, h);
+
+    // padding
+    var padLeft = 38;
+    var padRight = 12;
+    var padTop = 8;
+    var padBottom = 22;
+    var plotW = w - padLeft - padRight;
+    var plotH = h - padTop - padBottom;
+
+    // background
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, w, h);
+
+    // grid
+    ctx.strokeStyle = '#21262d';
+    ctx.lineWidth = 0.5;
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#8b949e';
+
+    // Y axis: 0%, 25%, 50%, 75%, 100%
+    for (var i = 0; i <= 4; i++) {
+      var yVal = i * 25;
+      var y = padTop + plotH - (yVal / 100) * plotH;
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(padLeft + plotW, y);
+      ctx.stroke();
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(yVal + '%', padLeft - 4, y);
+    }
+
+    if (historyData.length < 2) {
+      ctx.fillStyle = '#8b949e';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '12px monospace';
+      ctx.fillText('Collecting data...', w / 2, h / 2);
+      return;
+    }
+
+    var data = historyData;
+    var tMin = data[0].t;
+    var tMax = data[data.length - 1].t;
+    var tRange = tMax - tMin;
+    if (tRange <= 0) tRange = 1;
+
+    // X axis time labels (5-6 labels)
+    var labelCount = Math.min(6, Math.floor(plotW / 80));
+    if (labelCount < 2) labelCount = 2;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#8b949e';
+    for (var li = 0; li <= labelCount; li++) {
+      var frac = li / labelCount;
+      var xPos = padLeft + frac * plotW;
+      var tVal = tMin + frac * tRange;
+      ctx.fillText(fmtTime(tVal), xPos, padTop + plotH + 4);
+      // vertical grid line
+      ctx.beginPath();
+      ctx.moveTo(xPos, padTop);
+      ctx.lineTo(xPos, padTop + plotH);
+      ctx.stroke();
+    }
+
+    // Draw line helper
+    function drawLine(color, key) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (var di = 0; di < data.length; di++) {
+        var x = padLeft + ((data[di].t - tMin) / tRange) * plotW;
+        var val = data[di][key];
+        if (val > 100) val = 100;
+        if (val < 0) val = 0;
+        var y = padTop + plotH - (val / 100) * plotH;
+        if (di === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // subtle fill
+      ctx.globalAlpha = 0.06;
+      ctx.lineTo(padLeft + plotW, padTop + plotH);
+      ctx.lineTo(padLeft, padTop + plotH);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+
+    drawLine('#00ff41', 'c'); // CPU
+    drawLine('#58a6ff', 'm'); // Memory
+  }
+
+  function addHistoryPoint(cpuAvg, memPct, timestamp) {
+    var t = Math.floor(timestamp / 1000); // ms -> s
+    historyData.push({ t: t, c: cpuAvg, m: memPct });
+    // Keep max 3600 points
+    if (historyData.length > 3600) {
+      historyData = historyData.slice(historyData.length - 3600);
+    }
+    drawChart();
+  }
+
+  // ---- Main render ----
+
+  function render(data) {
+    lastData = data;
+    renderSystem(data.system);
+    renderCPU(data.cpu);
+    renderMemory(data.memory);
+    renderLoad(data.load, data.cpu, data.system.goVersion);
+    renderDisks(data.disks || []);
+    renderNetwork(data.network || []);
+    renderProcesses(data.processes || []);
+
+    // Add to history
+    addHistoryPoint(data.cpu.avgUsage, data.memory.usedPercent, data.timestamp);
+  }
+
+  // -- websocket --
+  function getWsUrl() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + location.host + '/ws';
+    // Pass token for auth if available
+    var token = localStorage.getItem('sysmon_token');
+    if (token) {
+      url += '?token=' + encodeURIComponent(token);
+    }
+    return url;
+  }
+
+  function connect() {
+    var url = getWsUrl();
+    ws = new WebSocket(url);
+
+    ws.onopen = function() {
+      $('#conn-status').className = 'status-dot connected';
+      $('#conn-status').title = 'connected';
+      reconnectDelay = 1000;
+    };
+
+    ws.onmessage = function(evt) {
+      try {
+        var msg = JSON.parse(evt.data);
+        if (msg.type === 'snapshot') {
+          render(msg.payload);
+        } else if (msg.type === 'history') {
+          // Full history array
+          historyData = msg.payload || [];
+          drawChart();
+        } else if (msg.type === 'docker') {
+          renderDocker(msg.payload);
+        } else if (!msg.type) {
+          // Legacy format (no type wrapper) - treat as snapshot
+          render(msg);
+        }
+      } catch(e) {
+        console.error('parse error', e);
+      }
+    };
+
+    ws.onclose = function() {
+      $('#conn-status').className = 'status-dot disconnected';
+      $('#conn-status').title = 'disconnected';
+      setTimeout(function() {
+        reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+        connect();
+      }, reconnectDelay);
+    };
+
+    ws.onerror = function() {
+      ws.close();
+    };
+  }
+
+  // -- sort buttons --
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('sort-btn')) {
+      sortField = e.target.getAttribute('data-sort');
+      var btns = document.querySelectorAll('.sort-btn');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+      e.target.classList.add('active');
+      if (lastData) renderProcesses(lastData.processes || []);
+    }
+  });
+
+  // -- init --
+  initChart();
+  connect();
+
+})();
