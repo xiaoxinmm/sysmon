@@ -16,7 +16,13 @@
 package monitor
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
 	"runtime"
 	"sort"
 	"strings"
@@ -93,6 +99,12 @@ type ProcessInfo struct {
 	Status string  `json:"status"`
 }
 
+type HistoryPoint struct {
+	Timestamp  int64   `json:"t"`
+	CPUAvg     float64 `json:"c"`
+	MemPercent float64 `json:"m"`
+}
+
 // network rate tracking
 var (
 	prevNetMu   sync.Mutex
@@ -107,6 +119,44 @@ type netSample struct {
 
 func init() {
 	prevNetData = make(map[string]netSample)
+}
+
+// history ring buffer
+var (
+	histMu       sync.Mutex
+	histBuf      []HistoryPoint
+	histCapacity int = 3600
+)
+
+func SetHistoryCapacity(n int) {
+	histMu.Lock()
+	defer histMu.Unlock()
+	histCapacity = n
+	if len(histBuf) > histCapacity {
+		histBuf = histBuf[len(histBuf)-histCapacity:]
+	}
+}
+
+func RecordHistory(cpuAvg, memPct float64) {
+	histMu.Lock()
+	defer histMu.Unlock()
+	pt := HistoryPoint{
+		Timestamp:  time.Now().Unix(),
+		CPUAvg:     cpuAvg,
+		MemPercent: memPct,
+	}
+	histBuf = append(histBuf, pt)
+	if len(histBuf) > histCapacity {
+		histBuf = histBuf[len(histBuf)-histCapacity:]
+	}
+}
+
+func GetHistory() []HistoryPoint {
+	histMu.Lock()
+	defer histMu.Unlock()
+	cp := make([]HistoryPoint, len(histBuf))
+	copy(cp, histBuf)
+	return cp
 }
 
 func GetSystemInfo() SystemInfo {
@@ -262,6 +312,141 @@ func GetLoadInfo() LoadInfo {
 		info.Load15 = l.Load15
 	}
 	return info
+}
+
+type DockerContainer struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Image    string  `json:"image"`
+	State    string  `json:"state"`
+	Status   string  `json:"status"`
+	CPUPct   float64 `json:"cpuPct"`
+	MemUsage uint64  `json:"memUsage"`
+	MemLimit uint64 `json:"memLimit"`
+	Created  string `json:"created"`
+}
+
+type dockerAPIContainer struct {
+	ID      string   `json:"Id"`
+	Names   []string `json:"Names"`
+	Image   string   `json:"Image"`
+	State   string   `json:"State"`
+	Status  string   `json:"Status"`
+	Created int64    `json:"Created"`
+}
+
+type dockerStatsMemory struct {
+	Usage uint64 `json:"usage"`
+	Limit uint64 `json:"limit"`
+}
+
+type dockerStatsCPU struct {
+	TotalUsage  uint64 `json:"total_usage"`
+	SystemUsage uint64 `json:"system_cpu_usage"`
+}
+
+type dockerStatsResponse struct {
+	CPUStats struct {
+		CPUUsage    dockerStatsCPU `json:"cpu_usage"`
+		SystemUsage uint64         `json:"system_cpu_usage"`
+		OnlineCPUs  int            `json:"online_cpus"`
+	} `json:"cpu_stats"`
+	PreCPUStats struct {
+		CPUUsage    dockerStatsCPU `json:"cpu_usage"`
+		SystemUsage uint64         `json:"system_cpu_usage"`
+	} `json:"precpu_stats"`
+	MemoryStats dockerStatsMemory `json:"memory_stats"`
+}
+
+var (
+	dockerHTTPClient *http.Client
+	dockerAvailable  bool
+	dockerCheckOnce  sync.Once
+)
+
+func initDockerClient() {
+	dockerHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", "/var/run/docker.sock")
+			},
+		},
+		Timeout: 5 * time.Second,
+	}
+	// quick check
+	resp, err := dockerHTTPClient.Get("http://localhost/version")
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		dockerAvailable = true
+	}
+}
+
+func GetDockerContainers() []DockerContainer {
+	dockerCheckOnce.Do(initDockerClient)
+	if !dockerAvailable {
+		return nil
+	}
+
+	resp, err := dockerHTTPClient.Get("http://localhost/containers/json?all=1")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+
+	var apiContainers []dockerAPIContainer
+	if err := json.Unmarshal(body, &apiContainers); err != nil {
+		return nil
+	}
+
+	containers := make([]DockerContainer, 0, len(apiContainers))
+	for _, c := range apiContainers {
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+		dc := DockerContainer{
+			ID:      c.ID,
+			Name:    name,
+			Image:   c.Image,
+			State:   c.State,
+			Status:  c.Status,
+			Created: time.Unix(c.Created, 0).Format(time.RFC3339),
+		}
+
+		if c.State == "running" {
+			statsURL := fmt.Sprintf("http://localhost/containers/%s/stats?stream=false&one-shot=true", c.ID)
+			sr, err := dockerHTTPClient.Get(statsURL)
+			if err != nil {
+				log.Printf("docker: failed to get stats for %s: %v", c.ID[:12], err)
+				containers = append(containers, dc)
+				continue
+			}
+			statsBody, _ := io.ReadAll(sr.Body)
+			sr.Body.Close()
+
+			var stats dockerStatsResponse
+			if json.Unmarshal(statsBody, &stats) == nil {
+				cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+				sysDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
+				if sysDelta > 0 && stats.CPUStats.OnlineCPUs > 0 {
+					dc.CPUPct = (cpuDelta / sysDelta) * float64(stats.CPUStats.OnlineCPUs) * 100.0
+				}
+				dc.MemUsage = stats.MemoryStats.Usage
+				dc.MemLimit = stats.MemoryStats.Limit
+			}
+		}
+
+		containers = append(containers, dc)
+	}
+
+	return containers
 }
 
 func GetProcesses(limit int) []ProcessInfo {

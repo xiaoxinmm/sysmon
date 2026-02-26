@@ -126,6 +126,14 @@ func main() {
 		data, _ := json.Marshal(initMsg)
 		conn.WriteMessage(websocket.TextMessage, data)
 
+		// Send history
+		history := monitor.GetHistory()
+		if len(history) > 0 {
+			histMsg := wsMessage{Type: "history", Payload: history}
+			data, _ := json.Marshal(histMsg)
+			conn.WriteMessage(websocket.TextMessage, data)
+		}
+
 		go func() {
 			defer h.remove(conn)
 			for {
@@ -143,7 +151,28 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			snap := collect()
+			// record history
+			monitor.RecordHistory(snap.CPU.AvgUsage, snap.Memory.UsedPercent)
+
 			msg := wsMessage{Type: "snapshot", Payload: snap}
+			data, err := json.Marshal(msg)
+			if err != nil {
+				continue
+			}
+			h.broadcast(data)
+		}
+	}()
+
+	// docker stats, less frequent
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			containers := monitor.GetDockerContainers()
+			if containers == nil {
+				continue
+			}
+			msg := wsMessage{Type: "docker", Payload: containers}
 			data, err := json.Marshal(msg)
 			if err != nil {
 				continue

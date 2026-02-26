@@ -227,6 +227,8 @@
       const image = esc(c.image || '-');
       const state = c.state || 'unknown';
       const status = esc(c.status || '-');
+      const cpuPct = c.state === 'running' ? c.cpuPct.toFixed(1) + '%' : '-';
+      const memStr = c.state === 'running' && c.memUsage > 0 ? fmtBytes(c.memUsage) + ' / ' + fmtBytes(c.memLimit) : '-';
       const created = fmtDateTime(c.created);
 
       const badgeCls = state === 'running' ? 'state-badge running'
@@ -239,6 +241,8 @@
         <td>${image}</td>
         <td><span class="${badgeCls}">${esc(state)}</span></td>
         <td>${status}</td>
+        <td class="col-num">${cpuPct}</td>
+        <td class="col-num">${memStr}</td>
         <td>${created}</td>
       </tr>`;
     }

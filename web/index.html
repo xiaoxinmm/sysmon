@@ -99,6 +99,18 @@
     </div>
   </section>
 
+  <!-- History trend chart -->
+  <section class="card card-wide" id="history-card">
+    <h2>CPU &amp; Memory Trend <small>(1 hour)</small></h2>
+    <div class="chart-container">
+      <canvas id="history-chart"></canvas>
+    </div>
+    <div class="chart-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:#00ff41"></span> CPU</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span> Memory</span>
+    </div>
+  </section>
+
   <!-- Disks / Network -->
   <section class="grid-row grid-2col">
     <div class="card">
@@ -122,6 +134,19 @@
           <tbody></tbody>
         </table>
       </div>
+    </div>
+  </section>
+
+  <!-- Docker -->
+  <section class="card" id="docker-section" style="display:none">
+    <h2>Docker <small id="docker-count"></small></h2>
+    <div class="table-wrap">
+      <table id="docker-table">
+        <thead>
+          <tr><th>Name</th><th>Image</th><th>State</th><th>Status</th><th class="col-num">CPU%</th><th class="col-num">Memory</th><th>Created</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </section>
 
