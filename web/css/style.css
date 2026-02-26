@@ -147,6 +147,26 @@ td .mini-bar {
 }
 td .mini-bar .bar-fill { height: 100%; border-radius: 2px; }
 
+#proc-table { table-layout: auto; }
+.col-pid { width: 70px; }
+.col-status { width: 60px; text-align: center; }
+
+.proc-header {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 4px;
+}
+.proc-header h2 { margin-bottom: 0; }
+.proc-header small { color: var(--text-dim); font-size: 0.75rem; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.proc-sort { display: flex; gap: 4px; align-items: center; font-size: 0.75rem; color: var(--text-dim); }
+.sort-btn {
+  background: var(--bar-bg); border: 1px solid var(--border);
+  color: var(--text-dim); padding: 2px 8px;
+  border-radius: 3px; cursor: pointer;
+  font-family: var(--font); font-size: 0.72rem;
+}
+.sort-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.sort-btn.active { color: var(--green); border-color: var(--green-dim); background: rgba(0,255,65,0.06); }
+
 footer {
   text-align: center; padding: 16px;
   color: var(--text-dim); font-size: 0.75rem;

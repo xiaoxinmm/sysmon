@@ -125,6 +125,27 @@
     </div>
   </section>
 
+  <!-- Processes -->
+  <section class="card">
+    <div class="proc-header">
+      <h2>Processes <small id="proc-count"></small></h2>
+      <div class="proc-sort">
+        Sort: 
+        <button class="sort-btn active" data-sort="cpu">CPU</button>
+        <button class="sort-btn" data-sort="mem">MEM</button>
+        <button class="sort-btn" data-sort="pid">PID</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="proc-table">
+        <thead>
+          <tr><th class="col-pid">PID</th><th>Name</th><th class="col-num">CPU%</th><th class="col-num">MEM%</th><th class="col-status">Status</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
 </main>
 
 <footer>

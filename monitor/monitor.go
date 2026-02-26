@@ -18,6 +18,7 @@ package monitor
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 	psnet "github.com/shirou/gopsutil/v3/net"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 type SystemInfo struct {
@@ -81,6 +83,14 @@ type LoadInfo struct {
 	Load1  float64 `json:"load1"`
 	Load5  float64 `json:"load5"`
 	Load15 float64 `json:"load15"`
+}
+
+type ProcessInfo struct {
+	PID    int32   `json:"pid"`
+	Name   string  `json:"name"`
+	CPU    float64 `json:"cpu"`
+	Mem    float32 `json:"mem"`
+	Status string  `json:"status"`
 }
 
 // network rate tracking
@@ -252,4 +262,36 @@ func GetLoadInfo() LoadInfo {
 		info.Load15 = l.Load15
 	}
 	return info
+}
+
+func GetProcesses(limit int) []ProcessInfo {
+	var procs []ProcessInfo
+	pids, err := process.Processes()
+	if err != nil {
+		return procs
+	}
+	for _, p := range pids {
+		name, _ := p.Name()
+		cpuPct, _ := p.CPUPercent()
+		memPct, _ := p.MemoryPercent()
+		statusSlice, _ := p.Status()
+		status := ""
+		if len(statusSlice) > 0 {
+			status = statusSlice[0]
+		}
+		procs = append(procs, ProcessInfo{
+			PID:    p.Pid,
+			Name:   name,
+			CPU:    cpuPct,
+			Mem:    memPct,
+			Status: status,
+		})
+	}
+	sort.Slice(procs, func(i, j int) bool {
+		return procs[i].CPU > procs[j].CPU
+	})
+	if len(procs) > limit {
+		procs = procs[:limit]
+	}
+	return procs
 }

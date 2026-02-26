@@ -21,6 +21,7 @@
   let lastData = null;
   let ws = null;
   let reconnectDelay = 1000;
+  let sortField = 'cpu';
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -57,6 +58,11 @@
     const d = document.createElement('span');
     d.textContent = s;
     return d.innerHTML;
+  };
+
+  const statusLabel = (s) => {
+    const map = { R: 'RUN', S: 'SLP', D: 'DSK', Z: 'ZMB', T: 'STP', I: 'IDL', sleep: 'SLP', running: 'RUN', idle: 'IDL', stop: 'STP', zombie: 'ZMB' };
+    return map[s] || s || '-';
   };
 
   // console.log('sysmon frontend loaded, version: dev');
@@ -171,6 +177,29 @@
     tbody.innerHTML = html;
   };
 
+  const renderProcesses = (procs) => {
+    const sorted = procs.slice();
+    if (sortField === 'cpu') sorted.sort((a, b) => b.cpu - a.cpu);
+    else if (sortField === 'mem') sorted.sort((a, b) => b.mem - a.mem);
+    else if (sortField === 'pid') sorted.sort((a, b) => a.pid - b.pid);
+
+    $('#proc-count').textContent = `(${sorted.length})`;
+
+    const tbody = $('#proc-table').querySelector('tbody');
+    let html = '';
+    for (let i = 0; i < sorted.length; i++) {
+      const p = sorted[i];
+      html += `<tr>
+        <td class="col-pid">${p.pid}</td>
+        <td>${esc(p.name)}</td>
+        <td class="col-num ${p.cpu > 50 ? 'c-red' : p.cpu > 20 ? 'c-yellow' : ''}">${p.cpu.toFixed(1)}</td>
+        <td class="col-num ${p.mem > 50 ? 'c-red' : p.mem > 20 ? 'c-yellow' : ''}">${p.mem.toFixed(1)}</td>
+        <td class="col-status">${statusLabel(p.status)}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  };
+
   const render = (data) => {
     lastData = data;
     renderSystem(data.system);
@@ -179,6 +208,7 @@
     renderLoad(data.load, data.cpu, data.system.goVersion);
     renderDisks(data.disks || []);
     renderNetwork(data.network || []);
+    renderProcesses(data.processes || []);
   };
 
   // -- websocket --
@@ -223,6 +253,17 @@
       ws.close();
     };
   };
+
+  // sort buttons
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('sort-btn')) {
+      sortField = e.target.getAttribute('data-sort');
+      const btns = document.querySelectorAll('.sort-btn');
+      for (let i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+      e.target.classList.add('active');
+      if (lastData) renderProcesses(lastData.processes || []);
+    }
+  });
 
   connect();
 })();

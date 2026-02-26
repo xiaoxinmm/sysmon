@@ -78,13 +78,14 @@ type wsMessage struct {
 }
 
 type Snapshot struct {
-	Timestamp int64              `json:"timestamp"`
-	System    monitor.SystemInfo `json:"system"`
-	CPU       monitor.CPUInfo    `json:"cpu"`
-	Memory    monitor.MemInfo    `json:"memory"`
-	Disks     []monitor.DiskInfo `json:"disks"`
-	Network   []monitor.NetInfo  `json:"network"`
-	Load      monitor.LoadInfo   `json:"load"`
+	Timestamp int64                `json:"timestamp"`
+	System    monitor.SystemInfo   `json:"system"`
+	CPU       monitor.CPUInfo      `json:"cpu"`
+	Memory    monitor.MemInfo      `json:"memory"`
+	Disks     []monitor.DiskInfo   `json:"disks"`
+	Network   []monitor.NetInfo    `json:"network"`
+	Load      monitor.LoadInfo     `json:"load"`
+	Processes []monitor.ProcessInfo `json:"processes"`
 }
 
 func collect() Snapshot {
@@ -96,6 +97,7 @@ func collect() Snapshot {
 		Disks:     monitor.GetDiskInfo(),
 		Network:   monitor.GetNetInfo(),
 		Load:      monitor.GetLoadInfo(),
+		Processes: monitor.GetProcesses(50),
 	}
 }
 
