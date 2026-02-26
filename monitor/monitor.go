@@ -21,6 +21,7 @@ import (
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/host"
+	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
@@ -50,6 +51,12 @@ type MemInfo struct {
 	SwapTotal   uint64  `json:"swapTotal"`
 	SwapUsed    uint64  `json:"swapUsed"`
 	SwapPercent float64 `json:"swapPercent"`
+}
+
+type LoadInfo struct {
+	Load1  float64 `json:"load1"`
+	Load5  float64 `json:"load5"`
+	Load15 float64 `json:"load15"`
 }
 
 func GetSystemInfo() SystemInfo {
@@ -105,6 +112,17 @@ func GetMemInfo() MemInfo {
 		info.SwapTotal = s.Total
 		info.SwapUsed = s.Used
 		info.SwapPercent = s.UsedPercent
+	}
+	return info
+}
+
+func GetLoadInfo() LoadInfo {
+	info := LoadInfo{}
+	l, err := load.Avg()
+	if err == nil && l != nil {
+		info.Load1 = l.Load1
+		info.Load5 = l.Load5
+		info.Load15 = l.Load15
 	}
 	return info
 }
