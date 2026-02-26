@@ -16,7 +16,11 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -25,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,6 +100,108 @@ func loadConfig(path string) Config {
 
 	return cfg
 }
+
+// --- auth stuff ---
+
+var authSecret []byte
+
+func initAuthSecret() {
+	authSecret = make([]byte, 32)
+	if _, err := rand.Read(authSecret); err != nil {
+		log.Fatal("failed to generate auth secret:", err)
+	}
+}
+
+func generateToken(password string) string {
+	expiry := time.Now().Add(24 * time.Hour).Unix()
+	payload := fmt.Sprintf("%d:%s", expiry, password)
+	mac := hmac.New(sha256.New, authSecret)
+	mac.Write([]byte(payload))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return fmt.Sprintf("%d:%s", expiry, sig)
+}
+
+func validateToken(token, password string) bool {
+	parts := strings.SplitN(token, ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	expiry, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return false
+	}
+	if time.Now().Unix() > expiry {
+		return false
+	}
+	payload := fmt.Sprintf("%d:%s", expiry, password)
+	mac := hmac.New(sha256.New, authSecret)
+	mac.Write([]byte(payload))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(parts[1]), []byte(expected))
+}
+
+func isAuthenticated(r *http.Request, password string) bool {
+	if password == "" {
+		return true
+	}
+	// check URL query token
+	if t := r.URL.Query().Get("token"); t != "" {
+		return validateToken(t, password)
+	}
+	// check cookie
+	if c, err := r.Cookie("sysmon_token"); err == nil {
+		return validateToken(c.Value, password)
+	}
+	return false
+}
+
+// 嵌入的登录页，懒得拆文件了
+const loginPage = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sysmon - login</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Mono','Cascadia Code','Fira Code',Consolas,monospace;
+background:#0d1117;color:#c9d1d9;display:flex;justify-content:center;align-items:center;min-height:100vh}
+.box{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:32px;width:320px;text-align:center}
+h1{font-size:1.1rem;color:#00ff41;margin-bottom:24px;letter-spacing:1px}
+input{width:100%;padding:10px 12px;background:#0d1117;border:1px solid #21262d;border-radius:4px;
+color:#c9d1d9;font-family:inherit;font-size:0.9rem;margin-bottom:16px;outline:none}
+input:focus{border-color:#00ff41}
+button{width:100%;padding:10px;background:#238636;border:none;border-radius:4px;
+color:#fff;font-family:inherit;font-size:0.9rem;cursor:pointer;font-weight:600}
+button:hover{background:#2ea043}
+.err{color:#f85149;font-size:0.8rem;margin-top:12px;display:none}
+</style>
+</head>
+<body>
+<div class="box">
+<h1>🔒 sysmon</h1>
+<form id="f">
+<input type="password" id="pw" placeholder="password" autofocus>
+<button type="submit">login</button>
+</form>
+<div class="err" id="err">wrong password</div>
+</div>
+<script>
+document.getElementById('f').onsubmit=async function(e){
+  e.preventDefault();
+  const pw=document.getElementById('pw').value;
+  const res=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  if(res.ok){
+    const d=await res.json();
+    document.cookie='sysmon_token='+d.token+';path=/;max-age=86400';
+    location.href='/';
+  }else{
+    document.getElementById('err').style.display='block';
+  }
+};
+</script>
+</body>
+</html>`
 
 //go:embed web
 var webFS embed.FS
@@ -172,6 +279,8 @@ func main() {
 
 	cfg := loadConfig(*configPath)
 
+	initAuthSecret()
+
 	// 设置 history 容量
 	monitor.SetHistoryCapacity(cfg.HistoryDuration)
 
@@ -181,9 +290,46 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	http.Handle("/", http.FileServer(http.FS(webContent)))
+
+	// login handler
+	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var req struct {
+				Password string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request", 400)
+				return
+			}
+			if req.Password != cfg.Password {
+				http.Error(w, "unauthorized", 401)
+				return
+			}
+			token := generateToken(cfg.Password)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"token": token})
+			return
+		}
+		// GET: show login page
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, loginPage)
+	})
+
+	// static files with auth
+	fileServer := http.FileServer(http.FS(webContent))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r, cfg.Password) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r, cfg.Password) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("websocket upgrade error: %v", err)
