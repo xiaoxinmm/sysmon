@@ -23,6 +23,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -30,6 +32,69 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+// TODO: 支持 TOML 配置
+
+// Config 存放所有运行时配置
+type Config struct {
+	Port            int    `json:"port"`
+	RefreshInterval int    `json:"refreshInterval"` // milliseconds
+	MaxProcesses    int    `json:"maxProcesses"`
+	Password        string `json:"password"`
+	HistoryDuration int    `json:"historyDuration"` // seconds
+}
+
+func defaultConfig() Config {
+	return Config{
+		Port:            8888,
+		RefreshInterval: 1500,
+		MaxProcesses:    50,
+		Password:        "",
+		HistoryDuration: 3600,
+	}
+}
+
+func loadConfig(path string) Config {
+	cfg := defaultConfig()
+	if path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Printf("config: failed to read %s, using defaults: %v", path, err)
+		} else {
+			if err := json.Unmarshal(data, &cfg); err != nil {
+				log.Printf("config: failed to parse %s: %v", path, err)
+				cfg = defaultConfig()
+			}
+		}
+	}
+
+	// 环境变量覆盖
+	if v := os.Getenv("PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Port = n
+		}
+	}
+	if v := os.Getenv("SYSMON_PASSWORD"); v != "" {
+		cfg.Password = v
+	}
+	if v := os.Getenv("SYSMON_REFRESH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.RefreshInterval = n
+		}
+	}
+	if v := os.Getenv("SYSMON_MAX_PROCS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.MaxProcesses = n
+		}
+	}
+	if v := os.Getenv("SYSMON_HISTORY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.HistoryDuration = n
+		}
+	}
+
+	return cfg
+}
 
 //go:embed web
 var webFS embed.FS
@@ -88,7 +153,7 @@ type Snapshot struct {
 	Processes []monitor.ProcessInfo `json:"processes"`
 }
 
-func collect() Snapshot {
+func collect(maxProcesses int) Snapshot {
 	return Snapshot{
 		Timestamp: time.Now().UnixMilli(),
 		System:    monitor.GetSystemInfo(),
@@ -97,13 +162,18 @@ func collect() Snapshot {
 		Disks:     monitor.GetDiskInfo(),
 		Network:   monitor.GetNetInfo(),
 		Load:      monitor.GetLoadInfo(),
-		Processes: monitor.GetProcesses(50),
+		Processes: monitor.GetProcesses(maxProcesses),
 	}
 }
 
 func main() {
-	port := flag.Int("port", 8888, "listen port")
+	configPath := flag.String("config", "", "path to config file")
 	flag.Parse()
+
+	cfg := loadConfig(*configPath)
+
+	// 设置 history 容量
+	monitor.SetHistoryCapacity(cfg.HistoryDuration)
 
 	h := newHub()
 
@@ -121,7 +191,7 @@ func main() {
 		}
 		h.add(conn)
 
-		snap := collect()
+		snap := collect(cfg.MaxProcesses)
 		initMsg := wsMessage{Type: "snapshot", Payload: snap}
 		data, _ := json.Marshal(initMsg)
 		conn.WriteMessage(websocket.TextMessage, data)
@@ -147,10 +217,10 @@ func main() {
 
 	// background broadcaster
 	go func() {
-		ticker := time.NewTicker(1500 * time.Millisecond)
+		ticker := time.NewTicker(time.Duration(cfg.RefreshInterval) * time.Millisecond)
 		defer ticker.Stop()
 		for range ticker.C {
-			snap := collect()
+			snap := collect(cfg.MaxProcesses)
 			// record history
 			monitor.RecordHistory(snap.CPU.AvgUsage, snap.Memory.UsedPercent)
 
@@ -181,7 +251,7 @@ func main() {
 		}
 	}()
 
-	addr := fmt.Sprintf(":%d", *port)
+	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("sysmon listening on http://0.0.0.0%s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal(err)
