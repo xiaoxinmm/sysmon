@@ -48,6 +48,12 @@ type Config struct {
 	Password        string `json:"password"`
 	HistoryDuration int    `json:"historyDuration"` // seconds
 	EnableShell     bool   `json:"enableShell"`
+	ShellPassword   string `json:"shell_password"` // 终端独立密码
+}
+
+// ShellEnabled returns true only when shell is explicitly enabled AND shell_password is set.
+func (c Config) ShellEnabled() bool {
+	return c.EnableShell && c.ShellPassword != ""
 }
 
 func defaultConfig() Config {
@@ -136,6 +142,36 @@ func validateToken(token, password string) bool {
 		return false
 	}
 	payload := fmt.Sprintf("%d:%s", expiry, password)
+	mac := hmac.New(sha256.New, authSecret)
+	mac.Write([]byte(payload))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(parts[1]), []byte(expected))
+}
+
+// generateShellToken creates a short-lived token (1 hour) for shell access.
+// Uses "shell:" prefix in payload to distinguish from main auth tokens.
+func generateShellToken(shellPassword string) string {
+	expiry := time.Now().Add(1 * time.Hour).Unix()
+	payload := fmt.Sprintf("shell:%d:%s", expiry, shellPassword)
+	mac := hmac.New(sha256.New, authSecret)
+	mac.Write([]byte(payload))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return fmt.Sprintf("%d:%s", expiry, sig)
+}
+
+func validateShellToken(token, shellPassword string) bool {
+	parts := strings.SplitN(token, ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	expiry, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return false
+	}
+	if time.Now().Unix() > expiry {
+		return false
+	}
+	payload := fmt.Sprintf("shell:%d:%s", expiry, shellPassword)
 	mac := hmac.New(sha256.New, authSecret)
 	mac.Write([]byte(payload))
 	expected := hex.EncodeToString(mac.Sum(nil))
@@ -377,8 +413,34 @@ func main() {
 	http.HandleFunc("/api/shell-status", authRequired(cfg.Password, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{
-			"enabled": cfg.EnableShell && cfg.Password != "",
+			"enabled": cfg.ShellEnabled(),
 		})
+	}))
+
+	// shell auth API — validates shell password, returns shell_token
+	http.HandleFunc("/api/shell-auth", authRequired(cfg.Password, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !cfg.ShellEnabled() {
+			http.Error(w, "shell disabled", http.StatusForbidden)
+			return
+		}
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if req.Password != cfg.ShellPassword {
+			http.Error(w, "wrong password", http.StatusUnauthorized)
+			return
+		}
+		token := generateShellToken(cfg.ShellPassword)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"shell_token": token})
 	}))
 
 	// background broadcaster

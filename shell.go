@@ -27,19 +27,20 @@ type shellMessage struct {
 // Text websocket messages carry JSON control commands (resize).
 func handleShell(cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Security: password must be set
-		if cfg.Password == "" {
-			http.Error(w, "shell disabled: no password configured", http.StatusForbidden)
+		// Security: shell must be enabled (enableShell && shell_password set)
+		if !cfg.ShellEnabled() {
+			http.Error(w, "shell disabled", http.StatusForbidden)
 			return
 		}
-		// Security: EnableShell must be true
-		if !cfg.EnableShell {
-			http.Error(w, "shell disabled in config", http.StatusForbidden)
-			return
-		}
-		// Security: must be authenticated
+		// Security: must be authenticated with main sysmon token
 		if !isAuthenticated(r, cfg.Password) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// Security: must have valid shell token
+		shellToken := r.URL.Query().Get("shell_token")
+		if shellToken == "" || !validateShellToken(shellToken, cfg.ShellPassword) {
+			http.Error(w, "shell token invalid or expired", http.StatusUnauthorized)
 			return
 		}
 
