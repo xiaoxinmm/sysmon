@@ -3,5 +3,7 @@
   "refreshInterval": 1500,
   "maxProcesses": 50,
   "password": "",
-  "historyDuration": 3600
+  "historyDuration": 3600,
+  "enableShell": false,
+  "shell_password": ""
 }
