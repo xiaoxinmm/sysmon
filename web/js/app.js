@@ -19,6 +19,7 @@
   'use strict';
 
   let lastData = null;
+  let lastDocker = null;
   let ws = null;
   let reconnectDelay = 1000;
   let sortField = 'cpu';
@@ -52,6 +53,14 @@
     if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
     if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
     return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+  };
+
+  const fmtDateTime = (isoStr) => {
+    if (!isoStr) return '-';
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '-';
+    const pad = (n) => ('0' + n).slice(-2);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
   const esc = (s) => {
@@ -200,6 +209,42 @@
     tbody.innerHTML = html;
   };
 
+  const renderDocker = (containers) => {
+    const section = $('#docker-section');
+    if (!section) return;
+    if (!containers || containers.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    $('#docker-count').textContent = `(${containers.length})`;
+
+    const tbody = $('#docker-table').querySelector('tbody');
+    let html = '';
+    for (let i = 0; i < containers.length; i++) {
+      const c = containers[i];
+      const name = esc(c.name || c.names || '-');
+      const image = esc(c.image || '-');
+      const state = c.state || 'unknown';
+      const status = esc(c.status || '-');
+      const created = fmtDateTime(c.created);
+
+      const badgeCls = state === 'running' ? 'state-badge running'
+        : state === 'exited' ? 'state-badge exited'
+        : state === 'paused' ? 'state-badge paused'
+        : 'state-badge';
+
+      html += `<tr>
+        <td>${name}</td>
+        <td>${image}</td>
+        <td><span class="${badgeCls}">${esc(state)}</span></td>
+        <td>${status}</td>
+        <td>${created}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  };
+
   const render = (data) => {
     lastData = data;
     // console.log('debug: snapshot received', msg.payload);
@@ -216,7 +261,13 @@
   // -- websocket --
   const getWsUrl = () => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return proto + '//' + location.host + '/ws';
+    let url = `${proto}//${location.host}/ws`;
+    const token = localStorage.getItem('sysmon-token') || new URLSearchParams(location.search).get('token');
+    if (token) {
+      url += `?token=${encodeURIComponent(token)}`;
+      localStorage.setItem('sysmon-token', token);
+    }
+    return url;
   };
 
   const connect = () => {
@@ -234,6 +285,15 @@
         const msg = JSON.parse(evt.data);
         if (msg.type === 'snapshot') {
           render(msg.payload);
+        } else if (msg.type === 'history') {
+          const points = msg.payload || [];
+          for (let i = 0; i < points.length; i++) {
+            const p = points[i];
+            addHistoryPoint(p.cpu, p.mem, p.ts * 1000);
+          }
+        } else if (msg.type === 'docker') {
+          lastDocker = msg.payload;
+          renderDocker(msg.payload);
         } else if (!msg.type) {
           render(msg);
         }
