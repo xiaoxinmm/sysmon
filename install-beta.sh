@@ -1,8 +1,15 @@
 #!/bin/bash
-# sysmon installer
-# Usage: bash <(curl -sL https://raw.githubusercontent.com/xiaoxinmm/sysmon/master/install.sh)
+# sysmon BETA installer
+# Usage: bash <(curl -sL https://raw.githubusercontent.com/xiaoxinmm/sysmon/master/install-beta.sh)
+#
+# ⚠️  This is a beta/dev version — NOT for production use!
 
 set -e
+
+echo "⚠️  WARNING: This is a beta/dev version of sysmon."
+echo "   It includes experimental features (WebShell/Web Terminal)."
+echo "   Do NOT use in production environments."
+echo ""
 
 # detect arch and os
 ARCH=$(uname -m)
@@ -21,10 +28,10 @@ case "$OS" in
 esac
 
 BINARY="sysmon-${OS}-${ARCH}"
-VERSION="v1.0.2"
+VERSION="v1.0.3-beta.dev"
 URL="https://github.com/xiaoxinmm/sysmon/releases/download/${VERSION}/${BINARY}.tar.gz"
 
-echo "Downloading sysmon ${VERSION} for ${OS}/${ARCH}..."
+echo "Downloading sysmon ${VERSION} (beta) for ${OS}/${ARCH}..."
 TMP=$(mktemp -d)
 curl -sL "$URL" -o "${TMP}/sysmon.tar.gz"
 tar xzf "${TMP}/sysmon.tar.gz" -C "${TMP}"
@@ -48,7 +55,6 @@ if [ ! -f /etc/sysmon.json ]; then
 }
 EOF
   echo "Created default config at /etc/sysmon.json"
-  echo "⚠️  Edit /etc/sysmon.json to set password and enable WebShell"
 fi
 
 # create systemd service if applicable
@@ -73,7 +79,13 @@ EOF
 fi
 
 echo ""
-echo "✅ sysmon installed to /usr/local/bin/sysmon"
+echo "✅ sysmon ${VERSION} (beta) installed to /usr/local/bin/sysmon"
+echo ""
+echo "⚠️  To enable WebShell (Web Terminal), edit /etc/sysmon.json:"
+echo '   "enable_shell": true,'
+echo '   "shell_password": "your-secure-password"'
+echo ""
+echo "   IMPORTANT: Set both 'password' and 'shell_password' before enabling shell!"
 echo ""
 echo "Start with:"
 echo "  systemctl start sysmon"
