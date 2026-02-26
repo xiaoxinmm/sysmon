@@ -202,6 +202,7 @@
 
   const render = (data) => {
     lastData = data;
+    // console.log('debug: snapshot received', msg.payload);
     renderSystem(data.system);
     renderCPU(data.cpu);
     renderMemory(data.memory);
@@ -209,6 +210,7 @@
     renderDisks(data.disks || []);
     renderNetwork(data.network || []);
     renderProcesses(data.processes || []);
+    addHistoryPoint(data.cpu.avgUsage, data.memory.usedPercent, Date.now());
   };
 
   // -- websocket --
@@ -254,6 +256,135 @@
     };
   };
 
+  // ---- History Chart (Canvas) ----
+  let historyData = [];
+  let chartCanvas = null;
+  let chartCtx = null;
+
+  const fmtTime = (unixSec) => {
+    const d = new Date(unixSec * 1000);
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  };
+
+  const initChart = () => {
+    chartCanvas = document.getElementById('history-chart');
+    if (!chartCanvas) return;
+    chartCtx = chartCanvas.getContext('2d');
+    resizeChart();
+    window.addEventListener('resize', resizeChart);
+  };
+
+  const resizeChart = () => {
+    if (!chartCanvas) return;
+    const container = chartCanvas.parentElement;
+    const dpr = window.devicePixelRatio || 1;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    chartCanvas.width = w * dpr;
+    chartCanvas.height = h * dpr;
+    chartCanvas.style.width = w + 'px';
+    chartCanvas.style.height = h + 'px';
+    chartCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawChart();
+  };
+
+  const drawChart = () => {
+    if (!chartCtx || !chartCanvas) return;
+    const container = chartCanvas.parentElement;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    const ctx = chartCtx;
+    ctx.clearRect(0, 0, w, h);
+
+    const padLeft = 38, padRight = 12, padTop = 8, padBottom = 22;
+    const plotW = w - padLeft - padRight;
+    const plotH = h - padTop - padBottom;
+
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, w, h);
+
+    // grid
+    ctx.strokeStyle = '#21262d';
+    ctx.lineWidth = 0.5;
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#8b949e';
+    for (let i = 0; i <= 4; i++) {
+      const yVal = i * 25;
+      const y = padTop + plotH - (yVal / 100) * plotH;
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(padLeft + plotW, y);
+      ctx.stroke();
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(yVal + '%', padLeft - 4, y);
+    }
+
+    if (historyData.length < 2) {
+      ctx.fillStyle = '#8b949e';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '12px monospace';
+      ctx.fillText('Collecting data...', w / 2, h / 2);
+      return;
+    }
+
+    const data = historyData;
+    const tMin = data[0].t;
+    const tMax = data[data.length - 1].t;
+    let tRange = tMax - tMin;
+    if (tRange <= 0) tRange = 1;
+
+    // x axis labels
+    const labelCount = Math.max(2, Math.min(6, Math.floor(plotW / 80)));
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#8b949e';
+    for (let li = 0; li <= labelCount; li++) {
+      const frac = li / labelCount;
+      const xPos = padLeft + frac * plotW;
+      ctx.fillText(fmtTime(tMin + frac * tRange), xPos, padTop + plotH + 4);
+      ctx.beginPath();
+      ctx.moveTo(xPos, padTop);
+      ctx.lineTo(xPos, padTop + plotH);
+      ctx.stroke();
+    }
+
+    const drawLine = (color, key) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let di = 0; di < data.length; di++) {
+        const x = padLeft + ((data[di].t - tMin) / tRange) * plotW;
+        let val = Math.max(0, Math.min(100, data[di][key]));
+        const y = padTop + plotH - (val / 100) * plotH;
+        di === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // subtle fill
+      ctx.globalAlpha = 0.06;
+      ctx.lineTo(padLeft + plotW, padTop + plotH);
+      ctx.lineTo(padLeft, padTop + plotH);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    };
+
+    drawLine('#00ff41', 'c');
+    drawLine('#58a6ff', 'm');
+  };
+
+  const addHistoryPoint = (cpuAvg, memPct, timestamp) => {
+    const t = Math.floor(timestamp / 1000);
+    historyData.push({ t, c: cpuAvg, m: memPct });
+    if (historyData.length > 3600) {
+      historyData = historyData.slice(-3600);
+    }
+    drawChart();
+  };
+
   // sort buttons
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('sort-btn')) {
@@ -265,5 +396,6 @@
     }
   });
 
+  initChart();
   connect();
 })();
