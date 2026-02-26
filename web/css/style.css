@@ -177,3 +177,27 @@ footer {
   .grid-row { grid-template-columns: 1fr; }
   .grid-2col { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 600px) {
+  html { font-size: 12px; }
+  header { flex-direction: column; gap: 8px; padding: 8px 12px; }
+  main { padding: 8px 10px; }
+  .card { padding: 12px; }
+  .metric-big { font-size: 1.8rem; }
+  .load-val { font-size: 1.2rem; }
+  .load-values { gap: 12px; }
+  .mem-details { flex-wrap: wrap; gap: 8px; }
+  /* hide less important table columns on small screens */
+  .col-hide-mobile { display: none; }
+  td .mini-bar { width: 60px; }
+  .card canvas { max-height: 150px; }
+}
+
+@media (max-width: 380px) {
+  html { font-size: 11px; }
+  header { padding: 6px 8px; }
+  main { padding: 6px; gap: 10px; }
+  .card { padding: 8px; }
+  .metric-big { font-size: 1.5rem; }
+  .bar-pct { width: 24px; }
+}

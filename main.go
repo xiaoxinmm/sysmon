@@ -113,6 +113,7 @@ func initAuthSecret() {
 }
 
 func generateToken(password string) string {
+	// cookie 有效期写死了，先这样
 	expiry := time.Now().Add(24 * time.Hour).Unix()
 	payload := fmt.Sprintf("%d:%s", expiry, password)
 	mac := hmac.New(sha256.New, authSecret)
@@ -153,6 +154,17 @@ func isAuthenticated(r *http.Request, password string) bool {
 		return validateToken(c.Value, password)
 	}
 	return false
+}
+
+// authRequired 中间件，没密码就放行
+func authRequired(password string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r, password) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // 嵌入的登录页，懒得拆文件了
@@ -317,13 +329,9 @@ func main() {
 
 	// static files with auth
 	fileServer := http.FileServer(http.FS(webContent))
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !isAuthenticated(r, cfg.Password) {
-			http.Redirect(w, r, "/login", http.StatusFound)
-			return
-		}
+	http.HandleFunc("/", authRequired(cfg.Password, func(w http.ResponseWriter, r *http.Request) {
 		fileServer.ServeHTTP(w, r)
-	})
+	}))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		if !isAuthenticated(r, cfg.Password) {
