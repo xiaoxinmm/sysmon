@@ -23,6 +23,7 @@
 <title>sysmon</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230d1117'/><text x='50' y='38' font-family='monospace' font-size='24' fill='%2300ff41' text-anchor='middle'>SYS</text><text x='50' y='62' font-family='monospace' font-size='18' fill='%2358a6ff' text-anchor='middle'>MON</text><rect x='15' y='72' width='70' height='4' rx='2' fill='%2300ff41' opacity='0.6'/><rect x='15' y='80' width='45' height='4' rx='2' fill='%2358a6ff' opacity='0.6'/></svg>">
 <link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/vendor/xterm.css">
 </head>
 <body>
 <header id="header">
@@ -171,6 +172,20 @@
     </div>
   </section>
 
+  <!-- Terminal (WebShell) -->
+  <section class="card" id="shell-card" style="display:none">
+    <div class="shell-header">
+      <h2>Terminal</h2>
+      <div class="shell-controls">
+        <button id="shell-toggle" class="sort-btn">Connect</button>
+      </div>
+    </div>
+    <div id="shell-notice" class="shell-notice" style="display:none">
+      Shell is disabled. Enable it in config with <code>enableShell: true</code> and set a password.
+    </div>
+    <div id="terminal-container"></div>
+  </section>
+
 </main>
 
 <footer>
@@ -178,5 +193,8 @@
 </footer>
 
 <script src="/js/app.js"></script>
+<script src="/js/vendor/xterm.js"></script>
+<script src="/js/vendor/xterm-addon-fit.js"></script>
+<script src="/js/shell.js"></script>
 </body>
 </html>
