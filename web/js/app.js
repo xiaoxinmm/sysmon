@@ -46,6 +46,19 @@
 
   const pctColorClass = (pct) => pct >= 90 ? 'c-red' : pct >= 70 ? 'c-yellow' : 'c-green';
 
+  const fmtRate = (bytesPerSec) => {
+    if (bytesPerSec <= 0) return '0 B/s';
+    if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+    if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+    return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+  };
+
+  const esc = (s) => {
+    const d = document.createElement('span');
+    d.textContent = s;
+    return d.innerHTML;
+  };
+
   // console.log('sysmon frontend loaded, version: dev');
 
   const renderSystem = (sys) => {
@@ -121,12 +134,51 @@
     $('#go-ver').textContent = goVer;
   };
 
+  const renderDisks = (disks) => {
+    const tbody = $('#disk-table').querySelector('tbody');
+    let html = '';
+    for (let i = 0; i < disks.length; i++) {
+      const d = disks[i];
+      const cls = pctBarClass(d.usedPercent);
+      html += `<tr>
+        <td>${esc(d.mountpoint)}</td>
+        <td>${esc(d.device)}</td>
+        <td>${esc(d.fstype)}</td>
+        <td>${fmtBytes(d.total)}</td>
+        <td>${fmtBytes(d.used)}</td>
+        <td>${fmtBytes(d.free)}</td>
+        <td class="${pctColorClass(d.usedPercent)}">${d.usedPercent.toFixed(1)}%</td>
+        <td><div class="mini-bar"><div class="bar-fill${cls}" style="width:${d.usedPercent.toFixed(0)}%"></div></div></td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  };
+
+  const renderNetwork = (nets) => {
+    const tbody = $('#net-table').querySelector('tbody');
+    let html = '';
+    for (let i = 0; i < nets.length; i++) {
+      const n = nets[i];
+      html += `<tr>
+        <td>${esc(n.name)}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(n.addrs || '-')}</td>
+        <td>${fmtBytes(n.bytesSent)}</td>
+        <td>${fmtBytes(n.bytesRecv)}</td>
+        <td>${fmtRate(n.sendRate)}</td>
+        <td>${fmtRate(n.recvRate)}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  };
+
   const render = (data) => {
     lastData = data;
     renderSystem(data.system);
     renderCPU(data.cpu);
     renderMemory(data.memory);
     renderLoad(data.load, data.cpu, data.system.goVersion);
+    renderDisks(data.disks || []);
+    renderNetwork(data.network || []);
   };
 
   // -- websocket --

@@ -82,6 +82,8 @@ type Snapshot struct {
 	System    monitor.SystemInfo `json:"system"`
 	CPU       monitor.CPUInfo    `json:"cpu"`
 	Memory    monitor.MemInfo    `json:"memory"`
+	Disks     []monitor.DiskInfo `json:"disks"`
+	Network   []monitor.NetInfo  `json:"network"`
 	Load      monitor.LoadInfo   `json:"load"`
 }
 
@@ -91,6 +93,8 @@ func collect() Snapshot {
 		System:    monitor.GetSystemInfo(),
 		CPU:       monitor.GetCPUInfo(),
 		Memory:    monitor.GetMemInfo(),
+		Disks:     monitor.GetDiskInfo(),
+		Network:   monitor.GetNetInfo(),
 		Load:      monitor.GetLoadInfo(),
 	}
 }

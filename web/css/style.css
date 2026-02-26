@@ -64,6 +64,7 @@ main {
 }
 
 .grid-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-2col { grid-template-columns: repeat(2, 1fr); }
 
 .card {
   background: var(--card);
@@ -119,6 +120,33 @@ main {
 .bar-fill.warn { background: var(--yellow); }
 .bar-fill.crit { background: var(--red); }
 
+/* tables */
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.8rem; table-layout: fixed;
+}
+thead th {
+  text-align: left; padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim); font-weight: 600;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+tbody td {
+  padding: 4px 8px; border-bottom: 1px solid #151a22;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+tbody tr:hover { background: rgba(255,255,255,0.02); }
+th.bar-col { width: 120px; }
+.col-num { width: 80px; text-align: right; }
+td .mini-bar {
+  display: inline-block; width: 100px; height: 4px;
+  background: var(--bar-bg); border-radius: 2px;
+  overflow: hidden; vertical-align: middle;
+}
+td .mini-bar .bar-fill { height: 100%; border-radius: 2px; }
+
 footer {
   text-align: center; padding: 16px;
   color: var(--text-dim); font-size: 0.75rem;
@@ -127,4 +155,5 @@ footer {
 
 @media (max-width: 960px) {
   .grid-row { grid-template-columns: 1fr; }
+  .grid-2col { grid-template-columns: 1fr; }
 }
