@@ -47,6 +47,7 @@ type Config struct {
 	MaxProcesses    int    `json:"maxProcesses"`
 	Password        string `json:"password"`
 	HistoryDuration int    `json:"historyDuration"` // seconds
+	EnableShell     bool   `json:"enableShell"`
 }
 
 func defaultConfig() Config {
@@ -368,6 +369,17 @@ func main() {
 			}
 		}()
 	})
+
+	// shell websocket endpoint
+	http.HandleFunc("/ws/shell", handleShell(cfg))
+
+	// shell status API — lets frontend know if shell is available
+	http.HandleFunc("/api/shell-status", authRequired(cfg.Password, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{
+			"enabled": cfg.EnableShell && cfg.Password != "",
+		})
+	}))
 
 	// background broadcaster
 	go func() {
