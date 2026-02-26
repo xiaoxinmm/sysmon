@@ -1,0 +1,7 @@
+{
+  "port": 8888,
+  "refreshInterval": 1500,
+  "maxProcesses": 50,
+  "password": "",
+  "historyDuration": 3600
+}
