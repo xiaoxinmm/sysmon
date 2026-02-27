@@ -82,7 +82,7 @@ echo ""
 echo "✅ sysmon ${VERSION} (beta) installed to /usr/local/bin/sysmon"
 echo ""
 echo "⚠️  To enable WebShell (Web Terminal), edit /etc/sysmon.json:"
-echo '   "enable_shell": true,'
+echo '   "enableShell": true,'
 echo '   "shell_password": "your-secure-password"'
 echo ""
 echo "   IMPORTANT: Set both 'password' and 'shell_password' before enabling shell!"
