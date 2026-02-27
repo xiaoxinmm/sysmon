@@ -21,7 +21,7 @@ case "$OS" in
 esac
 
 BINARY="sysmon-${OS}-${ARCH}"
-VERSION="v1.0.2"
+VERSION="v1.0.3"
 URL="https://github.com/xiaoxinmm/sysmon/releases/download/${VERSION}/${BINARY}.tar.gz"
 
 echo "Downloading sysmon ${VERSION} for ${OS}/${ARCH}..."
