@@ -1,0 +1,7 @@
+sysmon
+sysmon.json
+*.log
+*.db
+*.db-wal
+*.db-shm
+/tmp/

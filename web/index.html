@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sysmon v2</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230d1117'/><text x='50' y='38' font-family='monospace' font-size='24' fill='%2300ff41' text-anchor='middle'>SYS</text><text x='50' y='62' font-family='monospace' font-size='18' fill='%2358a6ff' text-anchor='middle'>MON</text><rect x='15' y='72' width='70' height='4' rx='2' fill='%2300ff41' opacity='0.6'/><rect x='15' y='80' width='45' height='4' rx='2' fill='%2358a6ff' opacity='0.6'/></svg>">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/vendor/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+/* Tab navigation */
+.tab-nav {
+  display: flex;
+  gap: 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+}
+.tab-btn {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  color: var(--green);
+  border-bottom-color: var(--green);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ===== Traffic tab: professional monitor style ===== */
+#tab-traffic {
+  background: var(--bg);
+  min-height: calc(100vh - 100px);
+}
+.traffic-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.traffic-controls-bar h3 {
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  letter-spacing: 0.3px;
+}
+.traffic-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.traffic-controls select {
+  padding: 5px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.traffic-controls select:focus {
+  border-color: var(--blue);
+  outline: none;
+}
+.traffic-controls button {
+  padding: 5px 12px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.traffic-controls button:hover { background: var(--card-hover); }
+
+/* stat cards */
+.stat-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin: 12px 16px 16px;
+}
+@media (max-width: 800px) {
+  .stat-summary { grid-template-columns: repeat(2, 1fr); }
+}
+.stat-card {
+  background: var(--card);
+  padding: 14px 16px;
+  border-left: 3px solid transparent;
+}
+.stat-card .stat-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  text-transform: lowercase;
+  margin-bottom: 4px;
+}
+.stat-card .stat-value {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+.stat-card-green  { border-left-color: var(--green); }
+.stat-card-blue   { border-left-color: var(--blue); }
+.stat-card-purple { border-left-color: var(--purple); }
+.stat-card-orange { border-left-color: var(--yellow); }
+
+/* main grid */
+.traffic-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
+  padding: 0 16px 16px;
+}
+@media (max-width: 1100px) {
+  .traffic-grid { grid-template-columns: 1fr; }
+}
+
+/* chart container */
+.traffic-chart-container {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 12px 8px 8px;
+  min-height: 380px;
+}
+.traffic-chart-container .chart-title {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+#traffic-chart { width: 100%; height: 340px; }
+
+/* top5 */
+.top5-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: none;
+  padding: 12px 8px 8px;
+}
+.top5-section .chart-title {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+#top5-chart { width: 100%; height: 220px; }
+
+/* port/host list */
+.port-list-container {
+  background: var(--card);
+  border: 1px solid var(--border);
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+.port-list-container::-webkit-scrollbar { width: 6px; }
+.port-list-container::-webkit-scrollbar-track { background: var(--bg); }
+.port-list-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.port-list-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.tl-row-head {
+  display: grid;
+  grid-template-columns: 80px 1fr 80px 80px;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 33px;
+  z-index: 1;
+}
+.port-item {
+  display: grid;
+  grid-template-columns: 80px 1fr 80px 80px;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  color: var(--text);
+}
+.port-item:hover { background: var(--card-hover); }
+.port-item.selected {
+  background: var(--card-hover);
+  border-left-color: var(--blue);
+}
+.port-item .port-num {
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+.port-item .port-bytes {
+  color: var(--text);
+  font-size: 0.78rem;
+  text-align: right;
+}
+.port-item .port-pkts {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-align: right;
+}
+.port-item .port-rate {
+  color: var(--green);
+  font-size: 0.72rem;
+  text-align: right;
+}
+.empty-state {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* ===== Nodes tab ===== */
+#tab-nodes {
+  background: var(--bg);
+  min-height: calc(100vh - 100px);
+}
+.nodes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.node-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+.node-card:hover {
+  border-color: var(--border);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.node-card.offline {
+  opacity: 0.6;
+}
+.node-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.node-hostname {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--blue);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.node-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.node-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.node-status-dot.offline {
+  background: var(--red);
+}
+.node-ip {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+.node-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.node-metric {
+  background: var(--bg);
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.node-metric-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.node-metric-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.node-metric-value.high {
+  color: var(--red);
+}
+.node-metric-value.medium {
+  color: var(--yellow);
+}
+.node-metric-value.low {
+  color: var(--green);
+}
+.node-last-seen {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+</style>
+</head>
+<body>
+<header id="header">
+  <div class="header-left">
+    <span class="logo">sysmon v2</span>
+    <span id="hostname" class="header-info"></span>
+  </div>
+  <div class="header-right">
+    <span id="conn-status" class="status-dot disconnected" title="disconnected"></span>
+    <span id="platform-info" class="header-info"></span>
+    <span id="uptime" class="header-info"></span>
+    <button id="theme-toggle" class="sort-btn" title="Toggle theme">
+      <span id="theme-icon">☀️</span>
+    </button>
+  </div>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" data-tab="system">System</button>
+  <button class="tab-btn" data-tab="traffic">Traffic</button>
+  <button class="tab-btn" data-tab="tree">Process Tree</button>
+  <button class="tab-btn" data-tab="nodes">Nodes</button>
+</nav>
+
+<!-- ============ System Tab ============ -->
+<div id="tab-system" class="tab-panel active">
+<main>
+  <section class="grid-row">
+    <div class="card">
+      <h2>CPU</h2>
+      <div class="card-subtitle">
+        <span id="cpu-model"></span>
+        <span id="cpu-cores"></span>
+      </div>
+      <div class="metric-big">
+        <span id="cpu-avg">0</span><span class="metric-unit">%</span>
+      </div>
+      <div id="cpu-bars" class="bar-group"></div>
+    </div>
+    <div class="card">
+      <h2>Memory</h2>
+      <div class="card-subtitle"><span id="mem-subtitle"></span></div>
+      <div class="metric-big">
+        <span id="mem-pct">0</span><span class="metric-unit">%</span>
+      </div>
+      <div class="bar-single"><div id="mem-bar" class="bar-fill" style="width:0%"></div></div>
+      <div class="mem-details">
+        <span>Used: <b id="mem-used">-</b></span>
+        <span>Free: <b id="mem-free">-</b></span>
+        <span>Total: <b id="mem-total">-</b></span>
+      </div>
+      <div id="swap-section" class="swap-section" style="display:none">
+        <div class="swap-label">Swap</div>
+        <div class="bar-single bar-swap"><div id="swap-bar" class="bar-fill" style="width:0%"></div></div>
+        <div class="mem-details">
+          <span>Used: <b id="swap-used">-</b></span>
+          <span>Total: <b id="swap-total">-</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Load Average</h2>
+      <div class="load-values">
+        <div class="load-item"><div class="load-label">1 min</div><div class="load-val" id="load1">-</div></div>
+        <div class="load-item"><div class="load-label">5 min</div><div class="load-val" id="load5">-</div></div>
+        <div class="load-item"><div class="load-label">15 min</div><div class="load-val" id="load15">-</div></div>
+      </div>
+      <div class="card-footer"><span id="go-ver"></span></div>
+    </div>
+  </section>
+
+  <section class="card card-wide" id="history-card">
+    <h2>CPU &amp; Memory Trend <small>(1 hour)</small></h2>
+    <div class="chart-container"><canvas id="history-chart"></canvas></div>
+    <div class="chart-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> CPU</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--blue)"></span> Memory</span>
+    </div>
+  </section>
+
+  <section class="grid-row grid-2col">
+    <div class="card">
+      <h2>Disks</h2>
+      <div class="table-wrap">
+        <table id="disk-table" data-labels='["Mount","Device","FS","Total","Used","Free","Use%",""]'>
+          <thead><tr><th>Mount</th><th>Device</th><th>FS</th><th>Total</th><th>Used</th><th>Free</th><th>Use%</th><th class="bar-col"></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Network</h2>
+      <div class="table-wrap">
+        <table id="net-table" data-labels='["Interface","IP","Sent","Recv","↑ Rate","↓ Rate"]'>
+          <thead><tr><th>Interface</th><th>IP</th><th>Sent</th><th>Recv</th><th>↑ Rate</th><th>↓ Rate</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="docker-section" style="display:none">
+    <h2>Docker <small id="docker-count"></small></h2>
+    <div class="table-wrap">
+      <table id="docker-table" data-labels='["Name","Image","State","Status","CPU%","Memory","Created"]'>
+        <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Status</th><th class="col-num">CPU%</th><th class="col-num">Memory</th><th>Created</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="proc-header">
+      <h2>Processes <small id="proc-count"></small></h2>
+      <div class="proc-sort">
+        Sort:
+        <button class="sort-btn active" data-sort="cpu">CPU</button>
+        <button class="sort-btn" data-sort="mem">MEM</button>
+        <button class="sort-btn" data-sort="pid">PID</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="proc-table" data-labels='["PID","Name","CPU%","MEM%","Status"]'>
+        <thead><tr><th class="col-pid">PID</th><th>Name</th><th class="col-num">CPU%</th><th class="col-num">MEM%</th><th class="col-status">Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="shell-card" style="display:none">
+    <div class="shell-header">
+      <h2>Terminal</h2>
+      <div class="shell-controls"><button id="shell-toggle" class="sort-btn">Connect</button></div>
+    </div>
+    <div id="shell-notice" class="shell-notice" style="display:none">
+      Shell is disabled. Enable it in config with <code>enableShell: true</code> and set a password.
+    </div>
+    <div id="terminal-container"></div>
+  </section>
+</main>
+</div>
+
+<!-- ============ Process Tree Tab ============ -->
+<div id="tab-tree" class="tab-panel">
+  <div class="traffic-controls-bar">
+    <h3>process tree</h3>
+  </div>
+  <div id="tree-chart" style="width: 100%; height: 600px; background: var(--bg);"></div>
+</div>
+
+<!-- ============ Nodes Tab ============ -->
+<div id="tab-nodes" class="tab-panel">
+  <div class="traffic-controls-bar">
+    <h3>agent nodes</h3>
+    <div class="traffic-controls">
+      <button id="refresh-nodes">Refresh</button>
+    </div>
+  </div>
+  <div id="nodes-container" style="padding: 16px;">
+    <div class="empty-state">Loading agent nodes...</div>
+  </div>
+</div>
+
+<!-- ============ Traffic Tab ============ -->
+<div id="tab-traffic" class="tab-panel">
+  <div class="traffic-controls-bar">
+    <h3>traffic monitor</h3>
+    <div class="traffic-controls">
+      <select id="traffic-view">
+        <option value="port">ports</option>
+        <option value="host">hosts</option>
+      </select>
+      <select id="traffic-range">
+        <option value="15m">15 min</option>
+        <option value="30m">30 min</option>
+        <option value="60m" selected>1 hour</option>
+        <option value="1d">1 day</option>
+        <option value="7d">7 days</option>
+        <option value="30d">30 days</option>
+      </select>
+      <button onclick="loadTrafficData()">refresh</button>
+      <button onclick="exportTrafficCSV()">export csv</button>
+    </div>
+  </div>
+
+  <div class="stat-summary" id="traffic-summary">
+    <div class="stat-card stat-card-green">
+      <div class="stat-label">active entries</div>
+      <div class="stat-value" id="ts-ports">-</div>
+    </div>
+    <div class="stat-card stat-card-blue">
+      <div class="stat-label">total bytes</div>
+      <div class="stat-value" id="ts-bytes">-</div>
+    </div>
+    <div class="stat-card stat-card-purple">
+      <div class="stat-label">total packets</div>
+      <div class="stat-value" id="ts-packets">-</div>
+    </div>
+    <div class="stat-card stat-card-orange">
+      <div class="stat-label">peak rate</div>
+      <div class="stat-value" id="ts-peak">-</div>
+    </div>
+  </div>
+
+  <div class="traffic-grid">
+    <div>
+      <div class="traffic-chart-container">
+        <div class="chart-title">traffic timeline</div>
+        <div id="traffic-chart"></div>
+      </div>
+      <div class="top5-section">
+        <div class="chart-title">top 5</div>
+        <div id="top5-chart"></div>
+      </div>
+    </div>
+    <div class="port-list-container">
+      <div class="port-list-header" id="port-list-title">active ports</div>
+      <div class="tl-row-head">
+        <span>port</span>
+        <span style="text-align:right">bytes</span>
+        <span style="text-align:right">pkts</span>
+        <span style="text-align:right">rate</span>
+      </div>
+      <div id="port-list"><div class="empty-state">loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>sysmon v2 &mdash; system + traffic monitoring</span>
+</footer>
+
+<script src="/js/app.js"></script>
+<script src="/js/vendor/xterm.js"></script>
+<script src="/js/vendor/xterm-addon-fit.js"></script>
+<script src="/js/shell.js"></script>
+<script>
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'traffic') loadTrafficData();
+    if (btn.dataset.tab === 'tree' && lastData && lastData.processes) renderProcessTree(lastData.processes);
+  });
+});
+
+// Traffic monitoring
+let trafficChart = null;
+let top5Chart = null;
+let trafficData = { ports: [], hosts: [] };
+let selectedTrafficItem = null;
+
+// Color palette (kept for potential reuse)
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatRate(bytesPerSec) {
+  return formatBytes(bytesPerSec) + '/s';
+}
+
+function loadTrafficData() {
+  const view = document.getElementById('traffic-view').value;
+  if (view === 'port') {
+    loadPortTraffic();
+  } else {
+    loadHostTraffic();
+  }
+}
+
+function loadPortTraffic() {
+  fetch('/api/traffic/ports')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) return;
+      trafficData.ports = data.data || [];
+      renderPortList();
+    })
+    .catch(() => {
+      document.getElementById('port-list').innerHTML = '<div class="empty-state">Traffic monitoring not enabled or no data</div>';
+    });
+}
+
+function loadHostTraffic() {
+  fetch('/api/traffic/hosts')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) return;
+      trafficData.hosts = data.data || [];
+      renderHostList();
+    })
+    .catch(() => {
+      document.getElementById('port-list').innerHTML = '<div class="empty-state">Traffic monitoring not enabled or no data</div>';
+    });
+}
+
+function renderPortList() {
+  const container = document.getElementById('port-list');
+  document.getElementById('port-list-title').textContent = 'active ports';
+  const ports = trafficData.ports;
+  document.getElementById('ts-ports').textContent = ports.length;
+
+  if (ports.length === 0) {
+    container.innerHTML = '<div class="empty-state">no active ports</div>';
+    top5Chart && top5Chart.clear();
+    return;
+  }
+
+  let totalBytes = 0, totalPackets = 0, peakRate = 0;
+  ports.forEach(p => {
+    totalBytes += p.total_bytes || 0;
+    totalPackets += p.total_packets || 0;
+    if ((p.peak_rate || 0) > peakRate) peakRate = p.peak_rate;
+  });
+  document.getElementById('ts-bytes').textContent = formatBytes(totalBytes);
+  document.getElementById('ts-packets').textContent = totalPackets.toLocaleString();
+  document.getElementById('ts-peak').textContent = formatRate(peakRate);
+
+  container.innerHTML = ports.map((p, i) => {
+    return `
+    <div class="port-item${selectedTrafficItem === 'port-'+p.port ? ' selected' : ''}" onclick="selectPort(${p.port})">
+      <span class="port-num">:${p.port}</span>
+      <span class="port-bytes">${formatBytes(p.total_bytes)}</span>
+      <span class="port-pkts">${(p.total_packets || 0).toLocaleString()}</span>
+      <span class="port-rate">${formatRate(p.avg_rate || 0)}</span>
+    </div>`;
+  }).join('');
+
+  renderTop5Chart(ports.map(p => ({ name: ':' + p.port, value: p.total_bytes || 0 })));
+}
+
+function renderHostList() {
+  const container = document.getElementById('port-list');
+  document.getElementById('port-list-title').textContent = 'active hosts';
+  const hosts = trafficData.hosts;
+  document.getElementById('ts-ports').textContent = hosts.length;
+
+  if (hosts.length === 0) {
+    container.innerHTML = '<div class="empty-state">no active hosts</div>';
+    top5Chart && top5Chart.clear();
+    return;
+  }
+
+  let totalBytes = 0, totalPackets = 0, peakRate = 0;
+  hosts.forEach(h => {
+    totalBytes += h.total_bytes || 0;
+    totalPackets += h.total_packets || 0;
+    if ((h.peak_rate || 0) > peakRate) peakRate = h.peak_rate;
+  });
+  document.getElementById('ts-bytes').textContent = formatBytes(totalBytes);
+  document.getElementById('ts-packets').textContent = totalPackets.toLocaleString();
+  document.getElementById('ts-peak').textContent = formatRate(peakRate);
+
+  container.innerHTML = hosts.map(h => {
+    return `
+    <div class="port-item${selectedTrafficItem === 'host-'+h.host_ip ? ' selected' : ''}" onclick="selectHost('${h.host_ip}')">
+      <span class="port-num">${h.host_ip}</span>
+      <span class="port-bytes">${formatBytes(h.total_bytes)}</span>
+      <span class="port-pkts">${(h.total_packets || 0).toLocaleString()}</span>
+      <span class="port-rate">${formatRate(h.avg_rate || 0)}</span>
+    </div>`;
+  }).join('');
+
+  renderTop5Chart(hosts.map(h => ({ name: h.host_ip, value: h.total_bytes || 0 })));
+}
+
+function selectPort(port) {
+  selectedTrafficItem = 'port-' + port;
+  const range = document.getElementById('traffic-range').value;
+  fetch(`/api/traffic/port-stats?port=${port}&range=${range}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) renderTrafficChart(data.data, 'port');
+      renderPortList();
+    })
+    .catch(() => {});
+}
+
+function selectHost(hostIP) {
+  selectedTrafficItem = 'host-' + hostIP;
+  const range = document.getElementById('traffic-range').value;
+  fetch(`/api/traffic/host-stats?host_ip=${hostIP}&range=${range}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) renderTrafficChart(data.data, 'host');
+      renderHostList();
+    })
+    .catch(() => {});
+}
+
+/* ===== ECharts: main traffic chart ===== */
+function getThemeColors() {
+  var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  return isLight ? {
+    bg: '#ffffff', card: '#f6f8fa', border: '#d0d7de',
+    text: '#24292f', textDim: '#57606a',
+    green: '#1a7f37', yellow: '#9a6700', red: '#cf222e',
+    blue: '#0969da', purple: '#8250df', blueAlt: '#0969da',
+    cardHover: '#e8ecf0'
+  } : {
+    bg: '#0d1117', card: '#161b22', border: '#21262d',
+    text: '#c9d1d9', textDim: '#8b949e',
+    green: '#3fb950', yellow: '#d29922', red: '#f85149',
+    blue: '#58a6ff', purple: '#bc8cff', blueAlt: '#1f6feb',
+    cardHover: '#1c2128'
+  };
+}
+
+function renderTrafficChart(data, type) {
+  const container = document.getElementById('traffic-chart');
+  if (!data.timeseries || data.timeseries.length === 0) {
+    container.innerHTML = '<div class="empty-state">No historical data for this time range</div>';
+    return;
+  }
+
+  if (!trafficChart) {
+    trafficChart = echarts.init(container, null, { renderer: 'canvas' });
+    window.addEventListener('resize', () => trafficChart && trafficChart.resize());
+  }
+
+  const ts = data.timeseries;
+  const times = ts.map(t => t.time || '');
+  const bytes = ts.map(t => t.bytes || 0);
+  const packets = ts.map(t => t.packets || 0);
+
+  var tc = getThemeColors();
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: tc.card,
+      borderColor: tc.border,
+      borderWidth: 1,
+      padding: [6, 10],
+      textStyle: { color: tc.text, fontSize: 12, fontFamily: "'SF Mono','Fira Code',monospace" },
+      formatter: function(params) {
+        let html = '<div style="color:' + tc.textDim + ';font-size:11px;margin-bottom:4px">' + params[0].axisValue + '</div>';
+        params.forEach(p => {
+          html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px">';
+          html += '<span style="display:inline-block;width:8px;height:2px;background:' + p.color + '"></span>';
+          html += '<span style="color:' + tc.textDim + '">' + p.seriesName + '</span>';
+          html += '<span style="color:' + tc.text + ';font-weight:600;margin-left:auto">' + (p.seriesName === 'Bytes' ? formatBytes(p.value) : p.value.toLocaleString()) + '</span></div>';
+        });
+        return html;
+      }
+    },
+    legend: {
+      top: 4, right: 10,
+      textStyle: { color: tc.textDim, fontSize: 11 },
+      itemWidth: 12, itemHeight: 2
+    },
+    grid: { top: 36, left: 8, right: 12, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: times,
+      axisLine: { lineStyle: { color: tc.border } },
+      axisLabel: { color: tc.textDim, fontSize: 10 },
+      axisTick: { show: false }
+    },
+    yAxis: [
+      {
+        type: 'value', name: 'bytes',
+        nameTextStyle: { color: tc.textDim, fontSize: 10 },
+        splitLine: { lineStyle: { color: tc.card } },
+        axisLabel: { color: tc.textDim, fontSize: 10, formatter: v => formatBytes(v) }
+      },
+      {
+        type: 'value', name: 'packets',
+        nameTextStyle: { color: tc.textDim, fontSize: 10 },
+        splitLine: { show: false },
+        axisLabel: { color: tc.textDim, fontSize: 10 }
+      }
+    ],
+    dataZoom: [
+      { type: 'inside', start: 0, end: 100 }
+    ],
+    series: [
+      {
+        name: 'Bytes', type: 'line', yAxisIndex: 0,
+        data: bytes, smooth: true, symbol: 'none',
+        lineStyle: { width: 1.5, color: tc.blue }
+      },
+      {
+        name: 'Packets', type: 'line', yAxisIndex: 1,
+        data: packets, smooth: true, symbol: 'none',
+        lineStyle: { width: 1.5, color: tc.green, type: 'dashed' }
+      }
+    ]
+  };
+
+  trafficChart.setOption(option, true);
+
+  document.getElementById('ts-bytes').textContent = formatBytes(data.total_bytes || 0);
+  document.getElementById('ts-packets').textContent = (data.total_packets || 0).toLocaleString();
+  document.getElementById('ts-peak').textContent = formatRate(data.peak_rate || 0);
+}
+
+/* ===== Top 5 horizontal bar ===== */
+function renderTop5Chart(items) {
+  const container = document.getElementById('top5-chart');
+  if (!items || items.length === 0) {
+    container.innerHTML = '<div class="empty-state">no data</div>';
+    return;
+  }
+
+  if (!top5Chart) {
+    top5Chart = echarts.init(container, null, { renderer: 'canvas' });
+    window.addEventListener('resize', () => top5Chart && top5Chart.resize());
+  }
+
+  const top5 = items.sort((a, b) => b.value - a.value).slice(0, 5);
+  const names = top5.map(i => i.name);
+  const values = top5.map(i => i.value);
+  const maxVal = Math.max(...values, 1);
+
+  var tc = getThemeColors();
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      backgroundColor: tc.card,
+      borderColor: tc.border,
+      borderWidth: 1,
+      padding: [6, 10],
+      textStyle: { color: tc.text, fontSize: 12, fontFamily: "'SF Mono','Fira Code',monospace" },
+      formatter: p => '<span style="color:' + tc.textDim + '">' + p[0].name + '</span>  <span style="color:' + tc.text + ';font-weight:600">' + formatBytes(p[0].value) + '</span>'
+    },
+    grid: { top: 4, left: 8, right: 40, bottom: 4, containLabel: true },
+    xAxis: {
+      type: 'value',
+      show: false
+    },
+    yAxis: {
+      type: 'category',
+      data: names.reverse(),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: tc.blue, fontSize: 11, fontFamily: "'SF Mono','Fira Code',monospace" }
+    },
+    series: [{
+      type: 'bar',
+      data: values.reverse(),
+      barWidth: 16,
+      itemStyle: { color: tc.blueAlt, borderRadius: [0, 2, 2, 0] },
+      label: {
+        show: true,
+        position: 'right',
+        formatter: p => formatBytes(p.value),
+        color: tc.textDim,
+        fontSize: 10,
+        fontFamily: "'SF Mono','Fira Code',monospace"
+      }
+    }]
+  };
+
+  top5Chart.setOption(option, true);
+}
+
+// View toggle
+document.getElementById('traffic-view').addEventListener('change', loadTrafficData);
+document.getElementById('traffic-range').addEventListener('change', loadTrafficData);
+
+// Re-render ECharts on theme change
+window.addEventListener('themechange', function() {
+  if (trafficChart) {
+    var lastTrafficData = trafficChart.getOption();
+    if (lastTrafficData && lastTrafficData.series && lastTrafficData.series[0] && lastTrafficData.series[0].data && lastTrafficData.series[0].data.length > 0) {
+      // Force re-render by re-setting the same option with new theme colors
+      var tc = getThemeColors();
+      trafficChart.setOption({
+        tooltip: { backgroundColor: tc.card, borderColor: tc.border, textStyle: { color: tc.text } },
+        legend: { textStyle: { color: tc.textDim } },
+        xAxis: { axisLine: { lineStyle: { color: tc.border } }, axisLabel: { color: tc.textDim } },
+        yAxis: [
+          { nameTextStyle: { color: tc.textDim }, splitLine: { lineStyle: { color: tc.card } }, axisLabel: { color: tc.textDim } },
+          { nameTextStyle: { color: tc.textDim }, axisLabel: { color: tc.textDim } }
+        ],
+        series: [
+          { lineStyle: { color: tc.blue } },
+          { lineStyle: { color: tc.green } }
+        ]
+      });
+    }
+  }
+  if (top5Chart) {
+    var tc2 = getThemeColors();
+    top5Chart.setOption({
+      tooltip: { backgroundColor: tc2.card, borderColor: tc2.border, textStyle: { color: tc2.text } },
+      yAxis: { axisLabel: { color: tc2.blue } },
+      series: [{ itemStyle: { color: tc2.blueAlt }, label: { color: tc2.textDim } }]
+    });
+  }
+});
+</script>
+</body>
+</html>
