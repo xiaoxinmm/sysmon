@@ -8,7 +8,7 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/sysmon"
 SERVICE_FILE="/etc/systemd/system/sysmon.service"
 REPO="xiaoxinmm/sysmon"
-BRANCH="v2"
+VERSION="latest"
 
 # Colors
 RED='\033[0;31m'
@@ -49,107 +49,99 @@ detect_os() {
     log_info "Detected OS: $OS"
 }
 
-install_dependencies() {
-    log_info "Installing dependencies..."
-
-    case $OS in
-        ubuntu|debian)
-            apt-get update -qq
-            apt-get install -y curl wget tar libpcap0.8 > /dev/null 2>&1
-            ;;
-        centos|rhel|fedora)
-            if command -v dnf &> /dev/null; then
-                dnf install -y curl wget tar libpcap > /dev/null 2>&1
-            else
-                yum install -y curl wget tar libpcap > /dev/null 2>&1
-            fi
-            ;;
-        arch|manjaro)
-            pacman -Sy --noconfirm curl wget tar libpcap > /dev/null 2>&1
-            ;;
-        opensuse*)
-            zypper install -y curl wget tar libpcap > /dev/null 2>&1
-            ;;
-        *)
-            log_warn "Unknown OS, skipping dependency installation"
-            ;;
-    esac
-}
-
-check_go() {
-    if ! command -v go &> /dev/null; then
-        log_error "Go is not installed. Installing Go..."
-        install_go
-    else
-        GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-        log_info "Go version: $GO_VERSION"
-    fi
-}
-
-install_go() {
-    log_info "Installing Go 1.25..."
-
+detect_arch() {
     ARCH=$(uname -m)
     case $ARCH in
         x86_64)
-            GO_ARCH="amd64"
+            ARCH="amd64"
             ;;
         aarch64|arm64)
-            GO_ARCH="arm64"
+            ARCH="arm64"
             ;;
         armv7l)
-            GO_ARCH="armv6l"
+            ARCH="armv7"
+            ;;
+        i386|i686)
+            ARCH="386"
             ;;
         *)
             log_error "Unsupported architecture: $ARCH"
             exit 1
             ;;
     esac
-
-    GO_VERSION="1.25.0"
-    GO_TAR="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
-
-    cd /tmp
-    wget -q "https://go.dev/dl/${GO_TAR}" || {
-        log_error "Failed to download Go"
-        exit 1
-    }
-
-    rm -rf /usr/local/go
-    tar -C /usr/local -xzf "$GO_TAR"
-
-    export PATH=$PATH:/usr/local/go/bin
-    echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
-
-    log_info "Go installed successfully"
+    log_info "Detected architecture: $ARCH"
 }
 
-build_sysmon() {
-    log_info "Building sysmon from source..."
+install_dependencies() {
+    log_info "Installing dependencies..."
 
-    BUILD_DIR="/tmp/sysmon-build"
-    rm -rf "$BUILD_DIR"
-    mkdir -p "$BUILD_DIR"
-    cd "$BUILD_DIR"
+    case $OS in
+        ubuntu|debian)
+            apt-get update -qq
+            apt-get install -y curl wget tar libpcap0.8 ca-certificates > /dev/null 2>&1
+            ;;
+        centos|rhel|fedora)
+            if command -v dnf &> /dev/null; then
+                dnf install -y curl wget tar libpcap ca-certificates > /dev/null 2>&1
+            else
+                yum install -y curl wget tar libpcap ca-certificates > /dev/null 2>&1
+            fi
+            ;;
+        arch|manjaro)
+            pacman -Sy --noconfirm curl wget tar libpcap ca-certificates > /dev/null 2>&1
+            ;;
+        opensuse*)
+            zypper install -y curl wget tar libpcap ca-certificates > /dev/null 2>&1
+            ;;
+        *)
+            log_warn "Unknown OS, attempting to continue..."
+            ;;
+    esac
+}
 
-    log_info "Cloning repository..."
-    git clone -b "$BRANCH" "https://github.com/${REPO}.git" . > /dev/null 2>&1 || {
-        log_error "Failed to clone repository"
+get_latest_release() {
+    log_info "Fetching latest release information..."
+
+    # Try to get latest release tag from GitHub API
+    RELEASE_URL="https://api.github.com/repos/${REPO}/releases/latest"
+    LATEST_TAG=$(curl -s "$RELEASE_URL" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+
+    if [ -z "$LATEST_TAG" ]; then
+        log_warn "Could not fetch latest release, using v2 branch"
+        LATEST_TAG="v2"
+    fi
+
+    log_info "Using version: $LATEST_TAG"
+}
+
+download_binary() {
+    log_info "Downloading sysmon binary..."
+
+    BINARY_NAME="sysmon-linux-${ARCH}"
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}"
+
+    # Fallback to raw branch if release not found
+    FALLBACK_URL="https://github.com/${REPO}/raw/v2/bin/${BINARY_NAME}"
+
+    TMP_FILE="/tmp/sysmon-download"
+
+    # Try release first
+    if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_FILE" 2>/dev/null; then
+        log_info "Downloaded from release"
+    elif curl -fsSL "$FALLBACK_URL" -o "$TMP_FILE" 2>/dev/null; then
+        log_info "Downloaded from repository"
+    else
+        log_error "Failed to download sysmon binary"
+        log_error "Tried: $DOWNLOAD_URL"
+        log_error "And: $FALLBACK_URL"
         exit 1
-    }
+    fi
 
-    log_info "Compiling..."
-    /usr/local/go/bin/go build -o sysmon . || {
-        log_error "Build failed"
-        exit 1
-    }
-
-    log_info "Installing binary..."
-    cp sysmon "$INSTALL_DIR/sysmon"
+    # Install binary
+    mv "$TMP_FILE" "$INSTALL_DIR/sysmon"
     chmod +x "$INSTALL_DIR/sysmon"
 
-    cd /
-    rm -rf "$BUILD_DIR"
+    log_info "Binary installed to $INSTALL_DIR/sysmon"
 }
 
 create_config() {
@@ -257,6 +249,9 @@ show_info() {
     echo "Config file: $CONFIG_DIR/sysmon.json"
     echo "After editing config, run: systemctl restart sysmon"
     echo ""
+    echo "To enable traffic monitoring, edit config and set:"
+    echo "  \"enable_traffic\": true"
+    echo ""
 }
 
 main() {
@@ -264,9 +259,10 @@ main() {
 
     check_root
     detect_os
+    detect_arch
     install_dependencies
-    check_go
-    build_sysmon
+    get_latest_release
+    download_binary
     create_config
     create_systemd_service
     start_service
