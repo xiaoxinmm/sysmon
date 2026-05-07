@@ -13,6 +13,7 @@ type TrafficKey struct {
 type TrafficStats struct {
 	Bytes      uint64
 	Packets    uint64
+	StartTime  time.Time // Sampling period start
 	LastUpdate time.Time
 	PeakRate   float64 // Bytes/s
 }

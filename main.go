@@ -236,7 +236,7 @@ func main() {
 
 		agg := traffic.NewAggregator()
 		dnsCache = traffic.NewDNSCache(5 * time.Minute)
-		anomalyDetector = traffic.NewAnomalyDetector(10, 100)
+		anomalyDetector = traffic.NewAnomalyDetector(30, 200)
 
 		// Get listening ports
 		listenPorts, err := traffic.GetListeningPorts()

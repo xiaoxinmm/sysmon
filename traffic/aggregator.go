@@ -31,10 +31,12 @@ func (a *Aggregator) Update(key TrafficKey, bytes uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	now := time.Now()
 	stats, exists := a.portData[key]
 	if !exists {
 		stats = &TrafficStats{
-			LastUpdate: time.Now(),
+			StartTime:  now,
+			LastUpdate: now,
 		}
 		a.portData[key] = stats
 	}
@@ -42,12 +44,12 @@ func (a *Aggregator) Update(key TrafficKey, bytes uint64) {
 	stats.Bytes += bytes
 	stats.Packets++
 
-	now := time.Now()
+	// Calculate instantaneous rate for peak detection
 	elapsed := now.Sub(stats.LastUpdate).Seconds()
-	if elapsed > 0 {
-		currentRate := float64(bytes) / elapsed
-		if currentRate > stats.PeakRate {
-			stats.PeakRate = currentRate
+	if elapsed >= 0.001 { // Avoid division by very small values
+		instantRate := float64(bytes) / elapsed
+		if instantRate > stats.PeakRate {
+			stats.PeakRate = instantRate
 		}
 	}
 	stats.LastUpdate = now
@@ -58,10 +60,12 @@ func (a *Aggregator) UpdateHost(key HostTrafficKey, bytes uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	now := time.Now()
 	stats, exists := a.hostData[key]
 	if !exists {
 		stats = &TrafficStats{
-			LastUpdate: time.Now(),
+			StartTime:  now,
+			LastUpdate: now,
 		}
 		a.hostData[key] = stats
 	}
@@ -69,12 +73,12 @@ func (a *Aggregator) UpdateHost(key HostTrafficKey, bytes uint64) {
 	stats.Bytes += bytes
 	stats.Packets++
 
-	now := time.Now()
+	// Calculate instantaneous rate for peak detection
 	elapsed := now.Sub(stats.LastUpdate).Seconds()
-	if elapsed > 0 {
-		currentRate := float64(bytes) / elapsed
-		if currentRate > stats.PeakRate {
-			stats.PeakRate = currentRate
+	if elapsed >= 0.001 { // Avoid division by very small values
+		instantRate := float64(bytes) / elapsed
+		if instantRate > stats.PeakRate {
+			stats.PeakRate = instantRate
 		}
 	}
 	stats.LastUpdate = now
@@ -89,9 +93,10 @@ func (a *Aggregator) GetSnapshot() []TrafficSnapshot {
 	snapshots := make([]TrafficSnapshot, 0, len(a.portData))
 
 	for key, stats := range a.portData {
-		elapsed := now.Sub(stats.LastUpdate).Seconds()
-		if elapsed == 0 {
-			elapsed = 60
+		// Use the entire sampling period for average rate calculation
+		elapsed := now.Sub(stats.StartTime).Seconds()
+		if elapsed < 0.1 {
+			elapsed = 0.1 // Minimum sampling period to avoid division by near-zero
 		}
 		avgRate := float64(stats.Bytes) / elapsed
 
@@ -119,9 +124,10 @@ func (a *Aggregator) GetHostSnapshot() []HostTrafficSnapshot {
 	snapshots := make([]HostTrafficSnapshot, 0, len(a.hostData))
 
 	for key, stats := range a.hostData {
-		elapsed := now.Sub(stats.LastUpdate).Seconds()
-		if elapsed == 0 {
-			elapsed = 60
+		// Use the entire sampling period for average rate calculation
+		elapsed := now.Sub(stats.StartTime).Seconds()
+		if elapsed < 0.1 {
+			elapsed = 0.1 // Minimum sampling period to avoid division by near-zero
 		}
 		avgRate := float64(stats.Bytes) / elapsed
 
@@ -145,6 +151,7 @@ func (a *Aggregator) GetRealTimeStats() map[uint16]map[string]interface{} {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
+	now := time.Now()
 	result := make(map[uint16]map[string]interface{})
 
 	for key, stats := range a.portData {
@@ -166,9 +173,10 @@ func (a *Aggregator) GetRealTimeStats() map[uint16]map[string]interface{} {
 			portData["peak_rate"] = stats.PeakRate
 		}
 
-		elapsed := time.Since(stats.LastUpdate).Seconds()
-		if elapsed == 0 {
-			elapsed = 1
+		// Calculate current average rate using the entire sampling period
+		elapsed := now.Sub(stats.StartTime).Seconds()
+		if elapsed < 0.1 {
+			elapsed = 0.1
 		}
 		currentRate := float64(stats.Bytes) / elapsed
 
@@ -191,6 +199,7 @@ func (a *Aggregator) GetRealTimeHostStats() map[string]map[string]interface{} {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
+	now := time.Now()
 	result := make(map[string]map[string]interface{})
 
 	for key, stats := range a.hostData {
@@ -212,9 +221,10 @@ func (a *Aggregator) GetRealTimeHostStats() map[string]map[string]interface{} {
 			hostData["peak_rate"] = stats.PeakRate
 		}
 
-		elapsed := time.Since(stats.LastUpdate).Seconds()
-		if elapsed == 0 {
-			elapsed = 1
+		// Calculate current average rate using the entire sampling period
+		elapsed := now.Sub(stats.StartTime).Seconds()
+		if elapsed < 0.1 {
+			elapsed = 0.1
 		}
 		currentRate := float64(stats.Bytes) / elapsed
 

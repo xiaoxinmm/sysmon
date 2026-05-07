@@ -5,3 +5,5 @@ sysmon.json
 *.db-wal
 *.db-shm
 /tmp/
+sysmon-fixed
+sysmon-new
