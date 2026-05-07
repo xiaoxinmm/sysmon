@@ -19,18 +19,28 @@ jobs:
           - goos: linux
             goarch: amd64
             suffix: ""
+            cgo: "1"
+            cc: "gcc"
           - goos: linux
             goarch: arm64
             suffix: ""
+            cgo: "1"
+            cc: "aarch64-linux-gnu-gcc"
           - goos: windows
             goarch: amd64
             suffix: ".exe"
+            cgo: "0"
+            cc: ""
           - goos: darwin
             goarch: amd64
             suffix: ""
+            cgo: "0"
+            cc: ""
           - goos: darwin
             goarch: arm64
             suffix: ""
+            cgo: "0"
+            cc: ""
 
     steps:
       - name: Checkout
@@ -41,11 +51,21 @@ jobs:
         with:
           go-version: '1.25.x'
 
+      - name: Install Linux build dependencies
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev
+          if [ "${{ matrix.goarch }}" = "arm64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
+
       - name: Build
         env:
-          CGO_ENABLED: "0"
+          CGO_ENABLED: ${{ matrix.cgo }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
         run: |
           BINARY_NAME="sysmon${{ matrix.suffix }}"
           go build -trimpath -ldflags="-s -w" -o "dist/${BINARY_NAME}" .
