@@ -23,6 +23,7 @@
   let ws = null;
   let reconnectDelay = 1000;
   let sortField = 'cpu';
+  let treeChart = null;
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -299,7 +300,7 @@
           const points = msg.payload || [];
           for (let i = 0; i < points.length; i++) {
             const p = points[i];
-            addHistoryPoint(p.cpu, p.mem, p.ts * 1000);
+            addHistoryPoint(p.c, p.m, p.t * 1000);
           }
         } else if (msg.type === 'docker') {
           lastDocker = msg.payload;
@@ -527,7 +528,6 @@
   connect();
 
   // ---- Process Tree Visualization ----
-  let treeChart = null;
 
   function getTreeThemeColors() {
     var isLight = document.documentElement.getAttribute('data-theme') === 'light';

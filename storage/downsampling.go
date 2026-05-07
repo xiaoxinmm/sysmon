@@ -16,7 +16,7 @@ func (s *TrafficStore) DownsampleAndCleanup() error {
 	slog.Debug("downsampling: granularity 0 -> 1")
 
 	_, err := s.db.Exec(`
-		INSERT INTO traffic_stats
+		INSERT OR IGNORE INTO traffic_stats
 		(timestamp, port, source_ip, direction, bytes, packets, peak_rate, granularity, created_at)
 		SELECT
 			(timestamp / 3600) * 3600 as hour_timestamp,
@@ -53,7 +53,7 @@ func (s *TrafficStore) DownsampleAndCleanup() error {
 	slog.Debug("downsampling: granularity 1 -> 2")
 
 	_, err = s.db.Exec(`
-		INSERT INTO traffic_stats
+		INSERT OR IGNORE INTO traffic_stats
 		(timestamp, port, source_ip, direction, bytes, packets, peak_rate, granularity, created_at)
 		SELECT
 			(timestamp / 86400) * 86400 as day_timestamp,
@@ -101,7 +101,7 @@ func (s *TrafficStore) DownsampleAndCleanup() error {
 	slog.Debug("downsampling: host traffic granularity 0 -> 1")
 
 	_, err = s.db.Exec(`
-		INSERT INTO host_traffic_stats
+		INSERT OR IGNORE INTO host_traffic_stats
 		(timestamp, host_ip, remote_ip, direction, bytes, packets, peak_rate, granularity, created_at)
 		SELECT
 			(timestamp / 3600) * 3600 as hour_timestamp,
@@ -135,7 +135,7 @@ func (s *TrafficStore) DownsampleAndCleanup() error {
 	slog.Debug("downsampling: host traffic granularity 1 -> 2")
 
 	_, err = s.db.Exec(`
-		INSERT INTO host_traffic_stats
+		INSERT OR IGNORE INTO host_traffic_stats
 		(timestamp, host_ip, remote_ip, direction, bytes, packets, peak_rate, granularity, created_at)
 		SELECT
 			(timestamp / 86400) * 86400 as day_timestamp,

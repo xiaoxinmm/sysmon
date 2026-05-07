@@ -678,15 +678,33 @@ function renderPortList() {
   document.getElementById('ts-packets').textContent = totalPackets.toLocaleString();
   document.getElementById('ts-peak').textContent = formatRate(peakRate);
 
-  container.innerHTML = ports.map((p, i) => {
-    return `
-    <div class="port-item${selectedTrafficItem === 'port-'+p.port ? ' selected' : ''}" onclick="selectPort(${p.port})">
-      <span class="port-num">:${p.port}</span>
-      <span class="port-bytes">${formatBytes(p.total_bytes)}</span>
-      <span class="port-pkts">${(p.total_packets || 0).toLocaleString()}</span>
-      <span class="port-rate">${formatRate(p.avg_rate || 0)}</span>
-    </div>`;
-  }).join('');
+  container.innerHTML = '';
+  ports.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'port-item' + (selectedTrafficItem === 'port-'+p.port ? ' selected' : '');
+    div.setAttribute('data-port', p.port);
+    const spanNum = document.createElement('span');
+    spanNum.className = 'port-num';
+    spanNum.textContent = ':' + p.port;
+    const spanBytes = document.createElement('span');
+    spanBytes.className = 'port-bytes';
+    spanBytes.textContent = formatBytes(p.total_bytes);
+    const spanPkts = document.createElement('span');
+    spanPkts.className = 'port-pkts';
+    spanPkts.textContent = (p.total_packets || 0).toLocaleString();
+    const spanRate = document.createElement('span');
+    spanRate.className = 'port-rate';
+    spanRate.textContent = formatRate(p.avg_rate || 0);
+    div.appendChild(spanNum);
+    div.appendChild(spanBytes);
+    div.appendChild(spanPkts);
+    div.appendChild(spanRate);
+    container.appendChild(div);
+  });
+  container.onclick = function(e) {
+    const item = e.target.closest('.port-item');
+    if (item && item.getAttribute('data-port')) selectPort(Number(item.getAttribute('data-port')));
+  };
 
   renderTop5Chart(ports.map(p => ({ name: ':' + p.port, value: p.total_bytes || 0 })));
 }
@@ -713,15 +731,33 @@ function renderHostList() {
   document.getElementById('ts-packets').textContent = totalPackets.toLocaleString();
   document.getElementById('ts-peak').textContent = formatRate(peakRate);
 
-  container.innerHTML = hosts.map(h => {
-    return `
-    <div class="port-item${selectedTrafficItem === 'host-'+h.host_ip ? ' selected' : ''}" onclick="selectHost('${h.host_ip}')">
-      <span class="port-num">${h.host_ip}</span>
-      <span class="port-bytes">${formatBytes(h.total_bytes)}</span>
-      <span class="port-pkts">${(h.total_packets || 0).toLocaleString()}</span>
-      <span class="port-rate">${formatRate(h.avg_rate || 0)}</span>
-    </div>`;
-  }).join('');
+  container.innerHTML = '';
+  hosts.forEach(h => {
+    const div = document.createElement('div');
+    div.className = 'port-item' + (selectedTrafficItem === 'host-'+h.host_ip ? ' selected' : '');
+    div.setAttribute('data-host-ip', h.host_ip);
+    const spanNum = document.createElement('span');
+    spanNum.className = 'port-num';
+    spanNum.textContent = h.host_ip;
+    const spanBytes = document.createElement('span');
+    spanBytes.className = 'port-bytes';
+    spanBytes.textContent = formatBytes(h.total_bytes);
+    const spanPkts = document.createElement('span');
+    spanPkts.className = 'port-pkts';
+    spanPkts.textContent = (h.total_packets || 0).toLocaleString();
+    const spanRate = document.createElement('span');
+    spanRate.className = 'port-rate';
+    spanRate.textContent = formatRate(h.avg_rate || 0);
+    div.appendChild(spanNum);
+    div.appendChild(spanBytes);
+    div.appendChild(spanPkts);
+    div.appendChild(spanRate);
+    container.appendChild(div);
+  });
+  container.onclick = function(e) {
+    const item = e.target.closest('.port-item');
+    if (item && item.getAttribute('data-host-ip')) selectHost(item.getAttribute('data-host-ip'));
+  };
 
   renderTop5Chart(hosts.map(h => ({ name: h.host_ip, value: h.total_bytes || 0 })));
 }

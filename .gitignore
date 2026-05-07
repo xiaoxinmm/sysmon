@@ -1,5 +1,6 @@
 sysmon
 sysmon.json
+test-config.json
 *.log
 *.db
 *.db-wal

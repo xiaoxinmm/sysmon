@@ -143,7 +143,33 @@ type RateLimiter struct {
 
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter() *RateLimiter {
-	return &RateLimiter{attempts: make(map[string][]time.Time)}
+	rl := &RateLimiter{attempts: make(map[string][]time.Time)}
+	go rl.cleanupLoop()
+	return rl
+}
+
+// cleanupLoop periodically removes expired IP entries from the attempts map
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		cutoff := time.Now().Add(-1 * time.Minute)
+		for ip, times := range rl.attempts {
+			var fresh []time.Time
+			for _, t := range times {
+				if t.After(cutoff) {
+					fresh = append(fresh, t)
+				}
+			}
+			if len(fresh) == 0 {
+				delete(rl.attempts, ip)
+			} else {
+				rl.attempts[ip] = fresh
+			}
+		}
+		rl.mu.Unlock()
+	}
 }
 
 // Allow checks if the given IP is allowed to make a request (max 5 per minute)

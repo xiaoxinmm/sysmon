@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"context"
 	"embed"
 	"encoding/json"
@@ -446,7 +447,7 @@ func registerRoutes(cfg Config, hub *ws.Hub, rl *RateLimiter, webContent fs.FS, 
 				http.Error(w, "bad request", 400)
 				return
 			}
-			if req.Password != c.Password {
+			if subtle.ConstantTimeCompare([]byte(req.Password), []byte(c.Password)) != 1 {
 				slog.Warn("login failed: wrong password", "ip", ip)
 				http.Error(w, "unauthorized", 401)
 				return
@@ -565,7 +566,7 @@ func registerRoutes(cfg Config, hub *ws.Hub, rl *RateLimiter, webContent fs.FS, 
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if req.Password != c.ShellPassword {
+		if subtle.ConstantTimeCompare([]byte(req.Password), []byte(c.ShellPassword)) != 1 {
 			slog.Warn("shell auth failed: wrong password", "remote", r.RemoteAddr)
 			http.Error(w, "wrong password", http.StatusUnauthorized)
 			return

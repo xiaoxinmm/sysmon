@@ -45,6 +45,9 @@ func (s *TrafficStore) init() error {
 	CREATE INDEX IF NOT EXISTS idx_traffic_cleanup
 		ON traffic_stats(granularity, timestamp);
 
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_traffic_stats_dedup
+		ON traffic_stats(timestamp, port, source_ip, direction, granularity);
+
 	CREATE TABLE IF NOT EXISTS host_traffic_stats (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		timestamp INTEGER NOT NULL,
@@ -63,6 +66,9 @@ func (s *TrafficStore) init() error {
 
 	CREATE INDEX IF NOT EXISTS idx_host_traffic_cleanup
 		ON host_traffic_stats(granularity, timestamp);
+
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_host_traffic_stats_dedup
+		ON host_traffic_stats(timestamp, host_ip, remote_ip, direction, granularity);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {

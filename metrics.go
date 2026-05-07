@@ -1,13 +1,11 @@
 package main
 
 import (
-	"log/slog"
-	"time"
+"time"
 
 	"sysmon/monitor"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
@@ -80,12 +78,9 @@ var (
 	})
 )
 
-func init() {
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(collectors.NewGoCollector())
-	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	slog.Debug("prometheus: registered Go and process collectors")
-}
+// Go and process collectors are automatically registered on the default
+// registry by prometheus/client_golang v1.20+ via promauto, so no explicit
+// registration is needed here.
 
 // UpdateMetricsFromSnapshot updates CPU, memory, and disk Prometheus gauges
 func UpdateMetricsFromSnapshot(snap Snapshot) {
