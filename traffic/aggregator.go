@@ -37,6 +37,9 @@ func (a *Aggregator) Update(key TrafficKey, bytes uint64) {
 			LastUpdate: time.Now(),
 		}
 		a.portData[key] = stats
+		stats.Bytes += bytes
+		stats.Packets++
+		return
 	}
 
 	stats.Bytes += bytes
@@ -44,7 +47,7 @@ func (a *Aggregator) Update(key TrafficKey, bytes uint64) {
 
 	now := time.Now()
 	elapsed := now.Sub(stats.LastUpdate).Seconds()
-	if elapsed > 0 {
+	if elapsed >= 0.001 {
 		currentRate := float64(bytes) / elapsed
 		if currentRate > stats.PeakRate {
 			stats.PeakRate = currentRate
@@ -64,6 +67,9 @@ func (a *Aggregator) UpdateHost(key HostTrafficKey, bytes uint64) {
 			LastUpdate: time.Now(),
 		}
 		a.hostData[key] = stats
+		stats.Bytes += bytes
+		stats.Packets++
+		return
 	}
 
 	stats.Bytes += bytes
@@ -71,7 +77,7 @@ func (a *Aggregator) UpdateHost(key HostTrafficKey, bytes uint64) {
 
 	now := time.Now()
 	elapsed := now.Sub(stats.LastUpdate).Seconds()
-	if elapsed > 0 {
+	if elapsed >= 0.001 {
 		currentRate := float64(bytes) / elapsed
 		if currentRate > stats.PeakRate {
 			stats.PeakRate = currentRate

@@ -498,8 +498,15 @@
 <div id="tab-tree" class="tab-panel">
   <div class="traffic-controls-bar">
     <h3>process tree</h3>
+    <div class="traffic-controls">
+      <span style="font-size: 0.75rem; color: var(--text-dim);">
+        <span style="color: var(--green);">●</span> &lt;20% CPU
+        <span style="color: var(--yellow); margin-left: 12px;">●</span> 20-50%
+        <span style="color: var(--red); margin-left: 12px;">●</span> &gt;50%
+      </span>
+    </div>
   </div>
-  <div id="tree-chart" style="width: 100%; height: 600px; background: var(--bg);"></div>
+  <div id="tree-chart" style="width: 100%; min-height: 600px; background: var(--bg);"></div>
 </div>
 
 <!-- ============ Nodes Tab ============ -->

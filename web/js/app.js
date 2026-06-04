@@ -23,7 +23,6 @@
   let ws = null;
   let reconnectDelay = 1000;
   let sortField = 'cpu';
-  let treeChart = null;
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -496,8 +495,9 @@
     }
     localStorage.setItem('sysmon-theme', theme);
     redrawChart();
-    // Re-render ECharts tree with new theme colors
-    if (treeChart && lastData && lastData.processes) {
+    // Re-render process tree with new theme colors
+    const treeTab = document.getElementById('tab-tree');
+    if (treeTab && treeTab.classList.contains('active') && lastData && lastData.processes) {
       renderProcessTree(lastData.processes);
     }
     // Notify other scripts about theme change
@@ -527,139 +527,161 @@
   initChart();
   connect();
 
-  // ---- Process Tree Visualization ----
+  // ---- Process Tree Visualization (Simple Table) ----
 
-  function getTreeThemeColors() {
-    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    return isLight ? {
-      bg: '#ffffff', card: '#f6f8fa', border: '#d0d7de',
-      text: '#24292f', textDim: '#57606a',
-      green: '#1a7f37', yellow: '#9a6700', red: '#cf222e',
-      blue: '#0969da'
-    } : {
-      bg: '#0d1117', card: '#161b22', border: '#21262d',
-      text: '#c9d1d9', textDim: '#8b949e',
-      green: '#3fb950', yellow: '#d29922', red: '#f85149',
-      blue: '#58a6ff'
-    };
-  }
+  let treeSort = 'cpu';
+  let collapsedPids = new Set();
 
   window.renderProcessTree = function(processes) {
     const container = document.getElementById('tree-chart');
     if (!container) return;
 
-    // Responsive height
-    const isMobile = window.innerWidth < 768;
-    container.style.height = isMobile ? '400px' : '600px';
+    const treeData = buildProcessTree(processes);
+    const flatTree = flattenTree(treeData, '', true, 0);
 
-    if (!treeChart) {
-      treeChart = echarts.init(container, null, { renderer: 'canvas' });
-      window.addEventListener('resize', () => {
-        if (treeChart) {
-          const isMobile = window.innerWidth < 768;
-          container.style.height = isMobile ? '400px' : '600px';
-          treeChart.resize();
-        }
+    let html = `<div style="padding: 16px; overflow: auto;">
+      <table id="process-tree-table" class="tree-table">
+        <thead>
+          <tr>
+            <th class="tree-col">Process Tree</th>
+            <th class="tree-num-col tree-sortable" data-sort="pid">PID</th>
+            <th class="tree-num-col tree-sortable" data-sort="cpu">CPU%</th>
+            <th class="tree-num-col tree-sortable" data-sort="mem">MEM%</th>
+            <th class="tree-status-col">Status</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    for (let i = 0; i < flatTree.length; i++) {
+      const item = flatTree[i];
+      const isCollapsed = collapsedPids.has(item.pid);
+      const hasChildren = item.hasChildren;
+      const cpu = item.cpu || 0;
+      const mem = item.mem || 0;
+
+      const cpuClass = cpu > 50 ? 'c-red' : cpu > 20 ? 'c-yellow' : 'c-green';
+      const memClass = mem > 50 ? 'c-red' : mem > 20 ? 'c-yellow' : 'c-green';
+
+      const displayStyle = item.hidden ? 'style="display: none;"' : '';
+      const rowClass = hasChildren ? 'tree-row-expandable' : 'tree-row';
+      const expandIcon = hasChildren ? (isCollapsed ? '▸' : '▾') : '';
+
+      html += `<tr class="${rowClass}" data-pid="${item.pid}" data-parent="${item.parentPid || ''}" data-depth="${item.depth}" ${displayStyle}>
+        <td class="tree-name-cell">
+          <span class="tree-indent">${item.prefix}</span>${expandIcon ? `<span class="tree-expand-icon">${expandIcon}</span>` : ''}<span class="tree-name">${esc(item.name)}</span>
+        </td>
+        <td class="tree-num-cell">${item.pid}</td>
+        <td class="tree-num-cell ${cpuClass}">${cpu.toFixed(1)}</td>
+        <td class="tree-num-cell ${memClass}">${mem.toFixed(1)}</td>
+        <td class="tree-status-cell">${statusLabel(item.status)}</td>
+      </tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    container.innerHTML = html;
+
+    attachTreeHandlers();
+  };
+
+  function flattenTree(node, prefix, isLast, depth) {
+    const result = [];
+    if (!node) return result;
+
+    if (node.pid !== null) {
+      result.push({
+        pid: node.pid,
+        name: node.name,
+        cpu: node.cpu,
+        mem: node.mem,
+        status: node.status,
+        prefix: prefix,
+        depth: depth,
+        hasChildren: node.children && node.children.length > 0,
+        parentPid: node.ppid,
+        hidden: false
       });
     }
 
-    const treeData = buildProcessTree(processes);
+    if (node.children && node.children.length > 0) {
+      for (let i = 0; i < node.children.length; i++) {
+        const child = node.children[i];
+        const isLastChild = i === node.children.length - 1;
+        const childPrefix = node.pid !== null
+          ? prefix + (isLast ? '    ' : '│   ')
+          : '';
+        const connector = isLastChild ? '└── ' : '├── ';
+        const childItems = flattenTree(child, childPrefix + connector, isLastChild, depth + 1);
 
-    var tc = getTreeThemeColors();
-    const option = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        triggerOn: 'mousemove',
-        backgroundColor: tc.card,
-        borderColor: tc.border,
-        borderWidth: 1,
-        padding: [8, 12],
-        textStyle: { color: tc.text, fontSize: 12, fontFamily: "'SF Mono','Fira Code',monospace" },
-        formatter: function(params) {
-          if (!params.data) return '';
-          const d = params.data;
-          let html = '<div style="font-weight:600;margin-bottom:4px">' + esc(d.name) + '</div>';
-          if (d.cpu !== undefined) {
-            html += '<div style="color:' + tc.textDim + '">CPU: <span style="color:' + tc.text + '">' + d.cpu.toFixed(1) + '%</span></div>';
-          }
-          if (d.mem !== undefined) {
-            html += '<div style="color:' + tc.textDim + '">MEM: <span style="color:' + tc.text + '">' + d.mem.toFixed(1) + '%</span></div>';
-          }
-          return html;
-        }
-      },
-      series: [{
-        type: 'tree',
-        data: [treeData],
-        top: '5%',
-        left: '10%',
-        bottom: '5%',
-        right: '20%',
-        symbolSize: 7,
-        orient: 'vertical',
-        expandAndCollapse: true,
-        initialTreeDepth: 3,
-        label: {
-          position: 'top',
-          verticalAlign: 'middle',
-          align: 'center',
-          fontSize: 10,
-          color: tc.text,
-          fontFamily: "'SF Mono','Fira Code',monospace"
-        },
-        leaves: {
-          label: {
-            position: 'bottom',
-            verticalAlign: 'middle',
-            align: 'center'
-          }
-        },
-        itemStyle: {
-          color: function(params) {
-            if (!params.data) return tc.green;
-            const cpu = params.data.cpu || 0;
-            if (cpu > 50) return tc.red;
-            if (cpu > 20) return tc.yellow;
-            return tc.green;
-          },
-          borderColor: tc.border,
-          borderWidth: 1
-        },
-        lineStyle: {
-          color: tc.border,
-          width: 1.5
-        },
-        emphasis: {
-          focus: 'descendant',
-          itemStyle: {
-            borderColor: tc.blue,
-            borderWidth: 2
-          }
-        }
-      }]
-    };
+        const isParentCollapsed = node.pid !== null && collapsedPids.has(node.pid);
+        childItems.forEach(item => {
+          item.hidden = isParentCollapsed;
+          result.push(item);
+        });
+      }
+    }
 
-    treeChart.setOption(option, true);
-  };
+    return result;
+  }
+
+  function attachTreeHandlers() {
+    const rows = document.querySelectorAll('.tree-row-expandable');
+    rows.forEach(row => {
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', function() {
+        const pid = parseInt(this.getAttribute('data-pid'));
+        toggleTreeNode(pid);
+      });
+    });
+
+    const sortHeaders = document.querySelectorAll('.tree-sortable');
+    sortHeaders.forEach(header => {
+      header.style.cursor = 'pointer';
+      header.addEventListener('click', function() {
+        const sortBy = this.getAttribute('data-sort');
+        if (treeSort === sortBy) {
+          treeSort = '-' + sortBy;
+        } else {
+          treeSort = sortBy;
+        }
+
+        sortHeaders.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+        this.classList.add(treeSort.startsWith('-') ? 'sorted-desc' : 'sorted-asc');
+
+        if (lastData && lastData.processes) {
+          renderProcessTree(lastData.processes);
+        }
+      });
+    });
+  }
+
+  function toggleTreeNode(pid) {
+    if (collapsedPids.has(pid)) {
+      collapsedPids.delete(pid);
+    } else {
+      collapsedPids.add(pid);
+    }
+
+    if (lastData && lastData.processes) {
+      renderProcessTree(lastData.processes);
+    }
+  }
 
   function buildProcessTree(processes) {
     const procMap = {};
 
-    // Build process map
     processes.forEach(p => {
       procMap[p.pid] = {
-        name: p.name + ' (' + p.pid + ')',
+        name: p.name,
         value: p.cpu + p.mem,
         cpu: p.cpu,
         mem: p.mem,
         pid: p.pid,
         ppid: p.ppid,
+        status: p.status,
         children: []
       };
     });
 
-    // Build tree structure
     const roots = [];
     Object.values(procMap).forEach(proc => {
       const parent = procMap[proc.ppid];
@@ -670,18 +692,36 @@
       }
     });
 
-    // Return single root or system root with multiple children
+    function sortChildren(node) {
+      if (node.children && node.children.length > 0) {
+        const sortKey = treeSort.startsWith('-') ? treeSort.slice(1) : treeSort;
+        const desc = !treeSort.startsWith('-');
+
+        node.children.sort((a, b) => {
+          let aVal = a[sortKey] || 0;
+          let bVal = b[sortKey] || 0;
+          return desc ? bVal - aVal : aVal - bVal;
+        });
+        node.children.forEach(sortChildren);
+      }
+    }
+
+    let finalRoot;
     if (roots.length === 1) {
-      return roots[0];
+      finalRoot = roots[0];
     } else {
-      return {
+      finalRoot = {
         name: 'System',
         children: roots,
         value: 0,
         cpu: 0,
-        mem: 0
+        mem: 0,
+        pid: null
       };
     }
+
+    sortChildren(finalRoot);
+    return finalRoot;
   }
 
   // Export traffic data to CSV
